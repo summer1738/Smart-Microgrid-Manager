@@ -1,0 +1,77 @@
+"""SQLAlchemy models for Smart Microgrid Manager."""
+from datetime import datetime
+from typing import List, Optional
+
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, Boolean
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(50), default="user")
+
+    appliances: Mapped[List["Appliance"]] = relationship("Appliance", back_populates="user")
+
+
+class Appliance(Base):
+    __tablename__ = "appliances"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)  # e.g. fridge_01
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, default=2)  # 1=critical, 2=essential, 3=non-essential
+    rated_watts: Mapped[float] = mapped_column(Float, nullable=False)
+    schedule_prefs: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: preferred windows
+    relay_topic: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    is_on: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    user: Mapped["User"] = relationship("User", back_populates="appliances")
+
+
+class PvReading(Base):
+    __tablename__ = "pv_readings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    power_kw: Mapped[float] = mapped_column(Float, nullable=False)
+    voltage: Mapped[float] = mapped_column(Float, nullable=False)
+    current_a: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class BatteryReading(Base):
+    __tablename__ = "battery_readings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    soc_percent: Mapped[float] = mapped_column(Float, nullable=False)
+    voltage: Mapped[float] = mapped_column(Float, nullable=False)
+    current_a: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+class LoadReading(Base):
+    __tablename__ = "load_readings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    appliance_id: Mapped[int] = mapped_column(ForeignKey("appliances.id"), nullable=False)
+    power_kw: Mapped[float] = mapped_column(Float, nullable=False)
+    state: Mapped[str] = mapped_column(String(20), default="on")  # on / off / shedded
+
+
+class ScheduleSlot(Base):
+    __tablename__ = "schedule_slots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    appliance_id: Mapped[int] = mapped_column(ForeignKey("appliances.id"), nullable=False)
+    start_ts: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    end_ts: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    planned_state: Mapped[str] = mapped_column(String(20), nullable=False)  # on / off
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending / applied / skipped

@@ -1,0 +1,15 @@
+# Optional: LSTM training/inference with PyTorch (CPU-only).
+#
+# IMPORTANT:
+# - Do NOT `pip install torch` from PyPI directly on manylinux: it can pull huge CUDA deps.
+# - Use the PyTorch CPU wheel index and explicitly request the `+cpu` build tags.
+#
+# Install with:
+#   pip install --extra-index-url https://download.pytorch.org/whl/cpu -r ai/requirements-torch-cpu.txt
+#
+# If you later want GPU builds, use a separate requirements file.
+
+# Keep these pinned to matching versions.
+torch==2.5.1+cpu
+torchvision==0.20.1+cpu
+torchaudio==2.5.1+cpu

@@ -1,0 +1,38 @@
+# Python
+.venv/
+venv/
+.venv-ai/
+*.py[cod]
+__pycache__/
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Node
+node_modules/
+webui/dist/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local runtime / training artifacts
+*.db
+*.sqlite
+*.sqlite3
+ai/models/*.pt
+ai/data/*.npz
