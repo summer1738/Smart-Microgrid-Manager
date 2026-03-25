@@ -7,7 +7,9 @@ from typing import Optional, Tuple
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import Appliance, ScheduleSlot
+from app.services.mqtt_ingest_service import publish_relay_command
 
 
 async def apply_schedule(session: AsyncSession, now: Optional[datetime] = None) -> Tuple[int, int]:
@@ -48,6 +50,8 @@ async def apply_schedule(session: AsyncSession, now: Optional[datetime] = None) 
         if app.is_on != new_on:
             app.is_on = new_on
             updated += 1
+            if not settings.use_hardware_simulation:
+                await publish_relay_command(app.external_id, new_on)
 
     # Mark slots as applied
     for slot in slots:

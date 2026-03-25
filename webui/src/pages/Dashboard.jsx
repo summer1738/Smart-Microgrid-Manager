@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo } from 'react'
 import { MultiLineChart, DonutChart, HorizontalBarChart } from '../components/Charts'
+import { MqttStatusTooltip } from '../components/MqttStatusTooltip'
+import { useAppSettings } from '../context/AppSettingsContext'
+import { getMqttBadge } from '../utils/mqttStatus'
 
 function downsample(points, max = 120) {
   if (!points?.length || points.length <= max) return points
@@ -11,8 +14,12 @@ function downsample(points, max = 120) {
 }
 
 export default function Dashboard({ api }) {
+  const { settings } = useAppSettings()
+  const showColorHover = settings.showHoverColorInterpretations
   const [status, setStatus] = useState(null)
   const [history, setHistory] = useState(null)
+  const [mqttHealth, setMqttHealth] = useState(null)
+  const [mqttBadgeHover, setMqttBadgeHover] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -37,11 +44,23 @@ export default function Dashboard({ api }) {
         if (!cancelled) setLoading(false)
       }
     }
+    async function fetchMqttHealth() {
+      try {
+        const r = await fetch(`${api}/health/mqtt`)
+        if (!r.ok) throw new Error(r.statusText)
+        const data = await r.json()
+        if (!cancelled) setMqttHealth(data)
+      } catch {
+        if (!cancelled) setMqttHealth(null)
+      }
+    }
     fetchStatus()
     fetchHistory()
+    fetchMqttHealth()
     const interval = setInterval(() => {
       fetchStatus()
       fetchHistory()
+      fetchMqttHealth()
     }, 10000)
     return () => {
       cancelled = true
@@ -67,12 +86,64 @@ export default function Dashboard({ api }) {
   const { pv, battery, loads, total_load_kw, simulated } = status
   const ts = status.timestamp ? new Date(status.timestamp).toLocaleString() : '–'
   const loadBars = loads
-    .map((l) => ({ label: l.name, value: l.power_kw, color: l.state === 'on' ? '#22c55e' : '#64748b' }))
+    .map((l) => {
+      const on = l.state === 'on'
+      const color = on ? '#22c55e' : '#64748b'
+      return {
+        label: l.name,
+        value: l.power_kw,
+        color,
+        hoverTitle: showColorHover
+          ? `${l.name}: ${l.power_kw.toFixed(3)} kW. Bar fill — ${
+              on
+                ? 'green: appliance ON (drawing power).'
+                : 'slate gray: appliance OFF or shedded (no intentional draw).'
+            }`
+          : undefined,
+      }
+    })
     .sort((a, b) => b.value - a.value)
+  const mqttBadge = getMqttBadge(mqttHealth)
 
   return (
     <div>
       <h1>Dashboard</h1>
+      {mqttBadge && (
+        <div
+          style={{ position: 'relative', display: 'inline-block', marginBottom: '0.75rem' }}
+          onMouseEnter={() => showColorHover && setMqttBadgeHover(true)}
+          onMouseLeave={() => setMqttBadgeHover(false)}
+        >
+          <p
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              background: '#1e293b',
+              padding: '0.45rem 0.75rem',
+              borderRadius: 999,
+              border: `1px solid ${mqttBadge.color}`,
+              margin: 0,
+              cursor: showColorHover ? 'help' : 'default',
+            }}
+            title={showColorHover ? undefined : mqttBadge.details}
+          >
+            <span
+              title={showColorHover ? `Status dot color: ${mqttBadge.thisColorMeans}` : undefined}
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: '50%',
+                background: mqttBadge.color,
+                display: 'inline-block',
+                flexShrink: 0,
+              }}
+            />
+            <span style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>{mqttBadge.label}</span>
+          </p>
+          {showColorHover && mqttBadgeHover && <MqttStatusTooltip mqttBadge={mqttBadge} />}
+        </div>
+      )}
       {simulated && (
         <p style={{ background: '#1e293b', padding: '0.5rem 0.75rem', borderRadius: 6 }}>
           Running in <strong>simulation mode</strong>. Background loop updates readings; charts use last 24h history.
@@ -122,8 +193,15 @@ export default function Dashboard({ api }) {
                   minHeight: 2,
                   background: '#0ea5e9',
                   borderRadius: 2,
+                  cursor: showColorHover ? 'help' : 'default',
                 }}
-                title={p.timestamp ? new Date(p.timestamp).toLocaleString() + ' – ' + (p.soc_percent ?? 0) + '%' : ''}
+                title={
+                  p.timestamp
+                    ? showColorHover
+                      ? `${new Date(p.timestamp).toLocaleString()} — SOC ${p.soc_percent ?? 0}%. Cyan bar height = battery state of charge (history); color is the chart series, not MQTT status.`
+                      : new Date(p.timestamp).toLocaleString() + ' – ' + (p.soc_percent ?? 0) + '%'
+                    : ''
+                }
               />
             ))}
           </div>
@@ -168,3 +246,4 @@ function Card({ title, value, sub }) {
     </div>
   )
 }
+

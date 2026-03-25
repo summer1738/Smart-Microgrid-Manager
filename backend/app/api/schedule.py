@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.models import Appliance, BatteryReading, ScheduleSlot
 from app.schemas import ScheduleOut, ScheduleSlotOut
-from app.services.forecast_service import generate_simulated_forecast
+from app.services.forecast_service import generate_hybrid_forecast
 from app.services.ieba_service import run_ieba
 from app.services.schedule_executor_service import apply_schedule
 
@@ -73,12 +73,13 @@ async def run_schedule(db: AsyncSession = Depends(get_db)) -> ScheduleOut:
             "name": a.name,
             "priority": a.priority,
             "rated_watts": float(a.rated_watts),
+            "schedule_prefs": a.schedule_prefs,
         }
         for a in appliances_db
     ]
 
-    # Forecast
-    timestamps, generation_kw, consumption_kw = generate_simulated_forecast(
+    # Forecast (hybrid: PV from weather when enabled; demand from LSTM when available)
+    timestamps, generation_kw, consumption_kw, _forecast_msg = await generate_hybrid_forecast(
         horizon_hours=HORIZON_HOURS,
         resolution_hours=RESOLUTION_HOURS,
         base_ts=now,

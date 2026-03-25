@@ -113,6 +113,7 @@ export function HorizontalBarChart({ items, title, unit = '' }) {
           </div>
           <div style={{ height: 8, background: '#1e293b', borderRadius: 4, overflow: 'hidden' }}>
             <div
+              title={it.hoverTitle || undefined}
               style={{
                 width: `${(it.value / max) * 100}%`,
                 height: '100%',

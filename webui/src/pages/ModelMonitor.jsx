@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { MultiLineChart } from '../components/Charts'
 
 function Badge({ ok, label }) {
@@ -28,9 +29,6 @@ export default function ModelMonitor({ api }) {
   const [err, setErr] = useState(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [lastFetch, setLastFetch] = useState(null)
-  const [trainBusy, setTrainBusy] = useState(false)
-  const [trainMsg, setTrainMsg] = useState(null)
-
   const load = useCallback(() => {
     setErr(null)
     fetch(`${api}/forecast/monitor?horizon_hours=24&compare=true`)
@@ -45,23 +43,6 @@ export default function ModelMonitor({ api }) {
         setLastFetch(new Date())
       })
   }, [api])
-
-  const trainNow = useCallback(() => {
-    setTrainMsg(null)
-    setErr(null)
-    setTrainBusy(true)
-    fetch(`${api}/forecast/monitor/train-now`, { method: 'POST' })
-      .then((r) => r.json())
-      .then((j) => {
-        setTrainMsg(j?.message || 'Done')
-        if (j?.ok === false) setErr(j?.message || 'Train failed')
-      })
-      .catch((e) => setErr(String(e.message || e)))
-      .finally(() => {
-        setTrainBusy(false)
-        load()
-      })
-  }, [api, load])
 
   useEffect(() => {
     load()
@@ -128,23 +109,20 @@ export default function ModelMonitor({ api }) {
         >
           Refresh
         </button>
-        <button
-          type="button"
-          disabled={trainBusy}
-          onClick={trainNow}
+        <Link
+          to="/training"
           style={{
             padding: '0.4rem 0.85rem',
-            background: trainBusy ? '#1f2937' : '#0ea5e9',
-            border: 'none',
+            background: '#0ea5e9',
             borderRadius: 6,
             color: '#0b1220',
-            cursor: trainBusy ? 'not-allowed' : 'pointer',
             fontWeight: 600,
+            textDecoration: 'none',
+            display: 'inline-block',
           }}
-          title="Trigger one immediate training run (requires auto-train enabled)"
         >
-          {trainBusy ? 'Training…' : 'Train now'}
-        </button>
+          Training
+        </Link>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9rem', color: '#94a3b8' }}>
           <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
           Auto-refresh (15s)
@@ -162,10 +140,6 @@ export default function ModelMonitor({ api }) {
       {err && (
         <p style={{ color: '#f87171', background: '#450a0a', padding: '0.75rem', borderRadius: 8 }}>{err}</p>
       )}
-      {trainMsg && !err && (
-        <p style={{ color: '#a7f3d0', background: '#052e1a', padding: '0.75rem', borderRadius: 8 }}>{trainMsg}</p>
-      )}
-
       {data && (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>

@@ -1,0 +1,17 @@
+"""Health endpoints for runtime diagnostics."""
+
+from fastapi import APIRouter
+
+from app.config import settings
+from app.services.mqtt_ingest_service import get_mqtt_health
+
+router = APIRouter(prefix="/health", tags=["health"])
+
+
+@router.get("/mqtt")
+async def mqtt_health() -> dict:
+    return {
+        "mode": "simulation" if settings.use_hardware_simulation else "hardware_ingest",
+        "mqtt": get_mqtt_health(),
+    }
+

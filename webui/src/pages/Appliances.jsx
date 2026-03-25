@@ -1,14 +1,81 @@
 import { useState, useEffect, useMemo } from 'react'
 import { HorizontalBarChart } from '../components/Charts'
 
+function ToggleSwitch({ checked, onChange, label }) {
+  return (
+    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+      <span style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>{label}</span>
+      <span
+        onClick={() => onChange(!checked)}
+        role="switch"
+        aria-checked={checked}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') onChange(!checked)
+        }}
+        style={{
+          width: 44,
+          height: 24,
+          borderRadius: 999,
+          background: checked ? '#22c55e' : '#334155',
+          border: '1px solid #475569',
+          position: 'relative',
+          transition: 'background 150ms ease',
+        }}
+      >
+        <span
+          style={{
+            width: 18,
+            height: 18,
+            borderRadius: 999,
+            background: '#0f172a',
+            position: 'absolute',
+            top: 2,
+            left: checked ? 22 : 2,
+            transition: 'left 150ms ease',
+            border: '1px solid #0b1220',
+          }}
+        />
+      </span>
+    </label>
+  )
+}
+
+function prefSummary(schedule_prefs) {
+  if (!schedule_prefs) return 'Run as long as possible'
+  try {
+    const p = JSON.parse(schedule_prefs)
+    if (p?.mode !== 'preferred_times') return 'Run as long as possible'
+    const w = Array.isArray(p.windows) ? p.windows : []
+    const windows = w.map((x) => `${x.start}-${x.end}`).join(', ')
+    return `${p.hard ? 'Hard' : 'Soft'} windows: ${windows || '(none)'}`
+  } catch {
+    return 'Run as long as possible'
+  }
+}
+
 export default function Appliances({ api }) {
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [form, setForm] = useState({ name: '', priority: 2, rated_watts: 100 })
+  const [form, setForm] = useState({
+    name: '',
+    priority: 2,
+    rated_watts: 100,
+    run_mode: 'max_possible', // max_possible | preferred_times
+    hard: false,
+    windows: [{ start: '07:00', end: '09:00' }],
+  })
   const [saving, setSaving] = useState(false)
   const [editingId, setEditingId] = useState(null)
-  const [editForm, setEditForm] = useState({ name: '', priority: 2, rated_watts: 100 })
+  const [editForm, setEditForm] = useState({
+    name: '',
+    priority: 2,
+    rated_watts: 100,
+    run_mode: 'max_possible',
+    hard: false,
+    windows: [{ start: '07:00', end: '09:00' }],
+  })
 
   const fetchList = async () => {
     try {
@@ -31,16 +98,32 @@ export default function Appliances({ api }) {
     e.preventDefault()
     setSaving(true)
     try {
+      const schedule_prefs =
+        form.run_mode === 'preferred_times'
+          ? JSON.stringify({ mode: 'preferred_times', hard: !!form.hard, windows: form.windows })
+          : JSON.stringify({ mode: 'max_possible' })
       const r = await fetch(`${api}/appliances`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          name: form.name,
+          priority: form.priority,
+          rated_watts: form.rated_watts,
+          schedule_prefs,
+        }),
       })
       if (!r.ok) {
         const err = await r.json().catch(() => ({}))
         throw new Error(err.detail || r.statusText)
       }
-      setForm({ name: '', priority: 2, rated_watts: 100 })
+      setForm({
+        name: '',
+        priority: 2,
+        rated_watts: 100,
+        run_mode: 'max_possible',
+        hard: false,
+        windows: [{ start: '07:00', end: '09:00' }],
+      })
       await fetchList()
     } catch (e) {
       setError(e.message)
@@ -53,7 +136,18 @@ export default function Appliances({ api }) {
 
   const startEdit = (a) => {
     setEditingId(a.id)
-    setEditForm({ name: a.name, priority: a.priority, rated_watts: a.rated_watts })
+    let pref = { mode: 'max_possible', hard: false, windows: [{ start: '07:00', end: '09:00' }] }
+    try {
+      if (a.schedule_prefs) pref = JSON.parse(a.schedule_prefs)
+    } catch {}
+    setEditForm({
+      name: a.name,
+      priority: a.priority,
+      rated_watts: a.rated_watts,
+      run_mode: pref.mode === 'preferred_times' ? 'preferred_times' : 'max_possible',
+      hard: !!pref.hard,
+      windows: Array.isArray(pref.windows) && pref.windows.length ? pref.windows : [{ start: '07:00', end: '09:00' }],
+    })
   }
 
   const cancelEdit = () => {
@@ -62,10 +156,19 @@ export default function Appliances({ api }) {
 
   const saveEdit = async (id) => {
     try {
+      const schedule_prefs =
+        editForm.run_mode === 'preferred_times'
+          ? JSON.stringify({ mode: 'preferred_times', hard: !!editForm.hard, windows: editForm.windows })
+          : JSON.stringify({ mode: 'max_possible' })
       const r = await fetch(`${api}/appliances/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify({
+          name: editForm.name,
+          priority: editForm.priority,
+          rated_watts: editForm.rated_watts,
+          schedule_prefs,
+        }),
       })
       if (!r.ok) {
         const err = await r.json().catch(() => ({}))
@@ -146,6 +249,76 @@ export default function Appliances({ api }) {
         </button>
       </form>
 
+      <div style={{ marginTop: 12, background: '#1e293b', padding: '0.75rem 1rem', borderRadius: 8, maxWidth: 920 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+          <div style={{ fontSize: '0.85rem', color: '#94a3b8', minWidth: 140 }}>Run preference</div>
+          <select
+            value={form.run_mode}
+            onChange={(e) => setForm((f) => ({ ...f, run_mode: e.target.value }))}
+            style={{ padding: '0.45rem', borderRadius: 6, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
+          >
+            <option value="max_possible">Run as long as possible</option>
+            <option value="preferred_times">Preferred times</option>
+          </select>
+          {form.run_mode === 'preferred_times' && (
+            <>
+              <ToggleSwitch checked={form.hard} onChange={(v) => setForm((f) => ({ ...f, hard: v }))} label="Only run in preferred windows (hard)" />
+              <button
+                type="button"
+                onClick={() => setForm((f) => ({ ...f, windows: [...f.windows, { start: '17:00', end: '21:00' }] }))}
+                style={{ padding: '0.35rem 0.6rem', borderRadius: 6, background: '#334155', border: 'none', color: '#e2e8f0' }}
+              >
+                + Window
+              </button>
+            </>
+          )}
+        </div>
+        {form.run_mode === 'preferred_times' && (
+          <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+            {form.windows.map((w, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input
+                  type="time"
+                  value={w.start}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      windows: f.windows.map((x, idx) => (idx === i ? { ...x, start: e.target.value } : x)),
+                    }))
+                  }
+                  style={{ padding: '0.35rem', borderRadius: 6, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
+                />
+                <span style={{ color: '#64748b' }}>to</span>
+                <input
+                  type="time"
+                  value={w.end}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      windows: f.windows.map((x, idx) => (idx === i ? { ...x, end: e.target.value } : x)),
+                    }))
+                  }
+                  style={{ padding: '0.35rem', borderRadius: 6, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
+                />
+                {form.windows.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, windows: f.windows.filter((_, idx) => idx !== i) }))}
+                    style={{ padding: '0.25rem 0.45rem', borderRadius: 6, background: '#7f1d1d', border: 'none', color: '#fecaca' }}
+                    title="Remove window"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <p style={{ marginTop: 10, marginBottom: 0, color: '#64748b', fontSize: '0.8rem' }}>
+          IEBA will prioritize running appliances inside preferred windows (soft), or forbid running outside them (hard).
+        </p>
+      </div>
+
       {list.length > 0 && (
         <section style={{ marginTop: '1.5rem', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
           <div style={{ background: '#1e293b', padding: '1rem', borderRadius: 8 }}>
@@ -167,6 +340,7 @@ export default function Appliances({ api }) {
             <th style={{ textAlign: 'left', padding: '0.5rem' }}>Name</th>
             <th style={{ textAlign: 'left', padding: '0.5rem' }}>Priority</th>
             <th style={{ textAlign: 'right', padding: '0.5rem' }}>Rated (W)</th>
+            <th style={{ textAlign: 'left', padding: '0.5rem' }}>Run preference</th>
             <th style={{ textAlign: 'right', padding: '0.5rem' }}>Actions</th>
           </tr>
         </thead>
@@ -185,6 +359,7 @@ export default function Appliances({ api }) {
                   a.name
                 )}
               </td>
+              {/* Preferences shown in edit row only for brevity */}
               <td style={{ padding: '0.5rem' }}>
                 {editingId === a.id ? (
                   <select
@@ -210,6 +385,73 @@ export default function Appliances({ api }) {
                   />
                 ) : (
                   a.rated_watts
+                )}
+              </td>
+              <td style={{ padding: '0.5rem' }}>
+                {editingId === a.id ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+                    <select
+                      value={editForm.run_mode}
+                      onChange={(e) => setEditForm((f) => ({ ...f, run_mode: e.target.value }))}
+                      style={{ padding: '0.25rem', borderRadius: 4, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
+                    >
+                      <option value="max_possible">Run as long as possible</option>
+                      <option value="preferred_times">Preferred times</option>
+                    </select>
+                    {editForm.run_mode === 'preferred_times' && (
+                      <>
+                        <ToggleSwitch checked={editForm.hard} onChange={(v) => setEditForm((f) => ({ ...f, hard: v }))} label="Hard (only within windows)" />
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          {editForm.windows.map((w, i) => (
+                            <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <input
+                                type="time"
+                                value={w.start}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    windows: f.windows.map((x, idx) => (idx === i ? { ...x, start: e.target.value } : x)),
+                                  }))
+                                }
+                                style={{ padding: '0.25rem', borderRadius: 4, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
+                              />
+                              <span style={{ color: '#64748b' }}>to</span>
+                              <input
+                                type="time"
+                                value={w.end}
+                                onChange={(e) =>
+                                  setEditForm((f) => ({
+                                    ...f,
+                                    windows: f.windows.map((x, idx) => (idx === i ? { ...x, end: e.target.value } : x)),
+                                  }))
+                                }
+                                style={{ padding: '0.25rem', borderRadius: 4, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
+                              />
+                              {editForm.windows.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditForm((f) => ({ ...f, windows: f.windows.filter((_, idx) => idx !== i) }))}
+                                  style={{ padding: '0.2rem 0.4rem', borderRadius: 6, background: '#7f1d1d', border: 'none', color: '#fecaca' }}
+                                  title="Remove window"
+                                >
+                                  ×
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setEditForm((f) => ({ ...f, windows: [...f.windows, { start: '17:00', end: '21:00' }] }))}
+                            style={{ padding: '0.25rem 0.5rem', borderRadius: 6, background: '#334155', border: 'none', color: '#e2e8f0' }}
+                          >
+                            + Window
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>{prefSummary(a.schedule_prefs)}</span>
                 )}
               </td>
               <td style={{ textAlign: 'right', padding: '0.5rem' }}>

@@ -75,3 +75,17 @@ class ScheduleSlot(Base):
     end_ts: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     planned_state: Mapped[str] = mapped_column(String(20), nullable=False)  # on / off
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending / applied / skipped
+
+
+class SystemSettings(Base):
+    """Single-row persisted settings (id=1). Env vars seed defaults on first run only."""
+
+    __tablename__ = "system_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)  # always 1
+    auto_train_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    weather_forecast_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    weather_latitude: Mapped[float] = mapped_column(Float, default=-17.8)
+    weather_longitude: Mapped[float] = mapped_column(Float, default=31.05)
+    weather_pv_capacity_kw: Mapped[float] = mapped_column(Float, default=1.0)
+    weather_panel_derate: Mapped[float] = mapped_column(Float, default=0.85)

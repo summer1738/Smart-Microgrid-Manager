@@ -5,15 +5,19 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
 import numpy as np
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.models import BatteryReading, LoadReading, PvReading
 from app.schemas import ForecastOut, ForecastSeries, ModelMonitorOut
-from app.services.forecast_service import generate_simulated_forecast
+from app.services.forecast_service import generate_forecast_with_weather, generate_hybrid_forecast
 from app.services.ml_forecast_service import inspect_forecast_models, try_model_forecast
+from app.services.system_settings_service import get_auto_train_enabled
+from app.services.auto_train_service import get_last_train_result
+from app.services.weather_insights_service import build_weather_pv_insights
 
 router = APIRouter(prefix="/forecast", tags=["forecast"])
 
@@ -46,6 +50,60 @@ def _compute_live_metrics(
     return smape, mape_masked, mae
 
 
+@router.get("/weather-insights")
+async def get_weather_insights(
+    forecast_days: int = Query(16, ge=7, le=16, description="Open-Meteo supports up to 16 days."),
+    history_days: int = Query(30, ge=7, le=90),
+    include_hourly: bool = Query(False, description="Include full hourly series (large JSON)."),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    Extended weather summary (cloud, WMO code, irradiance) and expected PV energy by day
+    from Open-Meteo, compared with actual daily PV energy from the database (past trends).
+    """
+    payload, summary = await build_weather_pv_insights(
+        db,
+        forecast_days=forecast_days,
+        history_days=history_days,
+        include_hourly=include_hourly,
+    )
+    payload["summary_message"] = summary
+    return payload
+
+
+@router.get("/training-status")
+async def get_training_status(db: AsyncSession = Depends(get_db)) -> dict:
+    """
+    Preconditions for UI-driven LSTM training: DB sample count, PyTorch, scheduled auto-train flag.
+    """
+    r = await db.execute(select(func.count(BatteryReading.id)))
+    n = int(r.scalar_one() or 0)
+    torch_available = False
+    try:
+        import torch  # noqa: F401
+
+        torch_available = True
+    except Exception:
+        pass
+    auto_train = await get_auto_train_enabled()
+    last_train = get_last_train_result()
+    return {
+        "battery_readings_count": n,
+        "min_samples_required": int(settings.auto_train_min_samples),
+        "enough_samples": n >= int(settings.auto_train_min_samples),
+        "torch_available": torch_available,
+        "auto_train_enabled": auto_train,
+        "auto_train_interval_minutes": int(settings.auto_train_interval_minutes),
+        "auto_train_history_hours": int(settings.auto_train_history_hours),
+        "last_train": last_train,
+        "pipeline_steps": [
+            "Export readings from SQLite to CSV",
+            "prepare_dataset (load + PV targets)",
+            "lstm_train → ai/models/load_lstm.pt and gen_lstm.pt",
+        ],
+    }
+
+
 @router.get("", response_model=ForecastOut)
 async def get_forecast(horizon_hours: int = 24) -> ForecastOut:
     """
@@ -54,24 +112,9 @@ async def get_forecast(horizon_hours: int = 24) -> ForecastOut:
     - Otherwise, fall back to a simulated PV + demand curve.
     """
     now = datetime.now(timezone.utc)
-    model = try_model_forecast(horizon_hours=horizon_hours, resolution_hours=1.0, base_ts=now)
-    if model is not None:
-        timestamps, gen_kw, load_kw, msg = model
-        return ForecastOut(
-            generated_at=now,
-            horizon_hours=horizon_hours,
-            series=ForecastSeries(
-                timestamps=timestamps,
-                generation_kw=[round(x, 4) for x in gen_kw],
-                consumption_kw=[round(x, 4) for x in load_kw],
-            ),
-            message=msg,
-        )
-    timestamps, generation_kw, consumption_kw = generate_simulated_forecast(
+    timestamps, generation_kw, consumption_kw, series_msg = await generate_hybrid_forecast(
         horizon_hours=horizon_hours,
         resolution_hours=1.0,
-        pv_capacity_kw=1.0,
-        cloud_factor=0.9,
         base_ts=now,
     )
     return ForecastOut(
@@ -82,7 +125,7 @@ async def get_forecast(horizon_hours: int = 24) -> ForecastOut:
             generation_kw=[round(x, 4) for x in generation_kw],
             consumption_kw=consumption_kw,
         ),
-        message="Simulated forecast (no trained LSTM models found).",
+        message=series_msg,
     )
 
 
@@ -109,16 +152,16 @@ async def get_model_monitor(
         forecast_message = msg
         lstm_active = True
     else:
-        _ts_sim, gen_s, cons_s = generate_simulated_forecast(
+        _ts_sim, gen_s, cons_s, wmsg = await generate_forecast_with_weather(
             horizon_hours=horizon_hours, resolution_hours=1.0, base_ts=now
         )
-        forecast_message = "Simulated forecast (LSTM not used)."
+        forecast_message = wmsg
         lstm_active = False
 
     model_series = None
     simulated_series = None
     if compare:
-        ts_sim, gen_sim, cons_sim = generate_simulated_forecast(
+        ts_sim, gen_sim, cons_sim, _ = await generate_forecast_with_weather(
             horizon_hours=horizon_hours, resolution_hours=1.0, base_ts=now
         )
         simulated_series = ForecastSeries(
@@ -217,7 +260,7 @@ async def get_model_monitor(
         load=load_info,
         errors=merged_errors,
         seed_source=str(payload.get("seed_source", "synthetic")),
-        ieba_uses_simulated_forecast=True,
+        ieba_uses_simulated_forecast=False,
         lstm_forecast_active=lstm_active,
         forecast_message=forecast_message,
         inference_ms=round(inference_ms, 2),
@@ -237,7 +280,6 @@ async def get_model_monitor(
 async def train_models_now() -> dict:
     """
     Trigger one immediate training attempt (same logic as auto-train loop).
-    Requires MICROGRID_AUTO_TRAIN_ENABLED=true so the trainer is running.
     """
     from app.services.auto_train_service import get_global_auto_trainer
 
@@ -245,7 +287,40 @@ async def train_models_now() -> dict:
     if trainer is None:
         return {
             "ok": False,
-            "message": "Auto-trainer is not running. Start backend with MICROGRID_AUTO_TRAIN_ENABLED=true.",
+            "message": "Auto-trainer is not initialized.",
         }
     res = await trainer.train_now()
-    return {"ok": bool(res.ok), "message": res.message, "output": res.output[-4000:]}
+    out = res.output or ""
+    tail = out[-16000:] if len(out) > 16000 else out
+    return {"ok": bool(res.ok), "message": res.message, "output": tail}
+
+
+@router.post("/monitor/train-now-async")
+async def train_models_now_async() -> dict:
+    """
+    Start training in the background with step + streaming log tail progress.
+    Returns the active job state.
+    """
+    from app.services.auto_train_service import get_global_auto_trainer
+
+    trainer = get_global_auto_trainer()
+    if trainer is None:
+        return {
+            "ok": False,
+            "message": "Auto-trainer is not initialized.",
+        }
+    job = await trainer.start_manual_train_job()
+    return {"ok": True, **job}
+
+
+@router.get("/monitor/train-now-progress")
+async def train_models_now_progress(job_id: Optional[str] = None) -> dict:
+    """
+    Poll training progress for the active manual job.
+    """
+    from app.services.auto_train_service import get_manual_train_job
+
+    job = get_manual_train_job(job_id=job_id)
+    if job is None:
+        return {"ok": False, "message": "No active training job."}
+    return {"ok": True, **job}

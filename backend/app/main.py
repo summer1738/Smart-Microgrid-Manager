@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import appliances, forecast, schedule, status
+from app.api import appliances, forecast, health, schedule, status, system_settings
 from app.config import settings
 from app.database import init_db
 
@@ -21,21 +21,35 @@ async def seed_default_user():
         await session.commit()
 
 
+async def seed_system_settings():
+    """Ensure system_settings row exists (defaults from env on first run)."""
+    from app.database import async_session
+    from app.services.system_settings_service import ensure_system_settings_row
+    async with async_session() as session:
+        await ensure_system_settings_row(session)
+        await session.commit()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     await seed_default_user()
+    await seed_system_settings()
     controller = None
     auto_trainer = None
+    mqtt_ingest = None
     if settings.use_hardware_simulation and settings.controller_loop_enabled:
         from app.services.controller_loop import ControllerLoop
         controller = ControllerLoop()
         await controller.start()
-    if settings.auto_train_enabled:
-        from app.services.auto_train_service import AutoTrainLoop, set_global_auto_trainer
-        auto_trainer = AutoTrainLoop()
-        set_global_auto_trainer(auto_trainer)
-        await auto_trainer.start()
+    if not settings.use_hardware_simulation:
+        from app.services.mqtt_ingest_service import MqttIngestLoop
+        mqtt_ingest = MqttIngestLoop()
+        await mqtt_ingest.start()
+    from app.services.auto_train_service import AutoTrainLoop, set_global_auto_trainer
+    auto_trainer = AutoTrainLoop()
+    set_global_auto_trainer(auto_trainer)
+    await auto_trainer.start()
     yield
     if controller is not None:
         await controller.stop()
@@ -43,6 +57,8 @@ async def lifespan(app: FastAPI):
         await auto_trainer.stop()
         from app.services.auto_train_service import set_global_auto_trainer
         set_global_auto_trainer(None)
+    if mqtt_ingest is not None:
+        await mqtt_ingest.stop()
 
 
 app = FastAPI(
@@ -63,6 +79,8 @@ app.include_router(appliances.router)
 app.include_router(status.router)
 app.include_router(forecast.router)
 app.include_router(schedule.router)
+app.include_router(health.router)
+app.include_router(system_settings.router)
 
 
 @app.get("/")
@@ -73,5 +91,9 @@ async def root():
         "status": "/status",
         "appliances": "/appliances",
         "forecast": "/forecast",
+        "training_status": "/forecast/training-status",
+        "weather_insights": "/forecast/weather-insights",
         "schedule": "/schedule",
+        "health_mqtt": "/health/mqtt",
+        "system_settings": "/system/settings",
     }

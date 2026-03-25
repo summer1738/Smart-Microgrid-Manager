@@ -41,7 +41,7 @@ So `/status` **reads the latest DB state** (it does not need to “tick”).
 - **Schedule executor**: Each `GET /status` applies the IEBA schedule for "now" (sets `Appliance.is_on`); the simulator then uses these states so shedded loads draw 0 W. `POST /schedule/apply` applies the schedule on demand.
 - **History** (`GET /status/history?hours=24`) returns time-series of PV, SOC, and total load for charts and export.
 - **Export** (for LSTM): `python -m ai.scripts.export_readings --hours 168 --output data/readings.csv` dumps aligned readings from `backend/microgrid.db`.
-- **Web UI**: Dashboard (SOC donut, line charts, load bars), Forecast (curves + bars), Schedule (24h heatmap), Appliances (priority / rated-power charts), **Model monitor** (`/model-monitor`: PyTorch + checkpoint status, LSTM vs simulated overlay).
+- **Web UI**: Dashboard, Forecast, Schedule, Appliances, **Training** (`/training`: run full LSTM pipeline + scheduled retrain), **Model monitor** (checkpoint status, LSTM vs simulated overlay), Weather & PV, Settings.
 
 ### Optional: install PyTorch (CPU-only)
 
@@ -51,38 +51,36 @@ If you want the `/forecast` endpoint (and **Model monitor**) to use LSTM checkpo
 
 ### Creating `load_lstm.pt` and `gen_lstm.pt`
 
-The backend expects `ai/models/load_lstm.pt` and `ai/models/gen_lstm.pt`. To create them:
+The backend expects `ai/models/load_lstm.pt` and `ai/models/gen_lstm.pt`.
 
-1. **Let the simulator run** so the DB has readings (e.g. a few hours with `MICROGRID_SIMULATOR_INTERVAL_SECONDS=1` or 60).
+1. **One-time:** install PyTorch in the backend venv (see optional CPU torch install above).
+2. **Let the simulator run** until you have enough `battery_readings` (see `MICROGRID_AUTO_TRAIN_MIN_SAMPLES`, default 200).
+3. Open the web UI **Training** page (`/training`), check the status pills, then click **Start training**. That runs export → `prepare_dataset` → `lstm_train` for both models on the server. Enable **scheduled retraining** on the same page if you want.
+4. **Model monitor** shows checkpoints and whether `/forecast` uses LSTMs.
 
-2. **Export readings** (from project root, with venv activated):
-   ```bash
-   python -m ai.scripts.export_readings --hours 168 --output data/readings.csv
-   ```
-   If you see "No readings in range", run the backend/simulator longer then retry.
-
-3. **Prepare datasets** (load and PV):
-   ```bash
-   python -m ai.training.prepare_dataset --input data/readings.csv --output ai/data/load_ds.npz --target total_load_kw
-   python -m ai.training.prepare_dataset --input data/readings.csv --output ai/data/gen_ds.npz  --target pv_kw
-   ```
-
-4. **Train and save models** (needs PyTorch in venv):
-   ```bash
-   python -m ai.training.lstm_train --dataset ai/data/load_ds.npz --out ai/models/load_lstm.pt
-   python -m ai.training.lstm_train --dataset ai/data/gen_ds.npz  --out ai/models/gen_lstm.pt
-   ```
-   You need at least ~100 samples in the CSV (about 2 days at 1‑minute resolution, or more at 1‑hour). Restart the backend after saving the `.pt` files; **Model monitor** will then show both checkpoints and LSTM-driven forecast.
+Advanced users can still run the `python -m ai.scripts.export_readings` / `prepare_dataset` / `lstm_train` commands from the project root; the UI uses the same pipeline.
 
 ## Useful env vars
 
 - `MICROGRID_CONTROLLER_LOOP_ENABLED=true|false`
 - `MICROGRID_SIMULATOR_INTERVAL_SECONDS=60` (set to `1` to generate data faster)
 - `MICROGRID_CONTROLLER_TICK_ON_STATUS_REQUEST=true|false` (legacy mode; tick on each `/status` call)
-- `MICROGRID_AUTO_TRAIN_ENABLED=true|false` (default false)
+- `MICROGRID_AUTO_TRAIN_ENABLED=true|false` (default false; seeds the DB on first run — enable/disable scheduled training on the **Training** page in the web UI, stored in `system_settings`)
 - `MICROGRID_AUTO_TRAIN_INTERVAL_MINUTES=360` (how often to retrain)
 - `MICROGRID_AUTO_TRAIN_HISTORY_HOURS=168` (export window for training)
 - `MICROGRID_AUTO_TRAIN_MIN_SAMPLES=200` (minimum `battery_readings` rows before training)
+- `MICROGRID_MQTT_HOST=localhost`
+- `MICROGRID_MQTT_PORT=1883`
+- `MICROGRID_MQTT_TOPIC_PREFIX=microgrid`
+
+### Weather → expected PV (Open-Meteo, no API key)
+
+When LSTM checkpoints are **not** used, `/forecast` and IEBA (`POST /schedule/run`) use **hourly shortwave radiation** (W/m²) from [Open-Meteo](https://open-meteo.com/) to scale PV generation against your nominal array size. If the request fails or weather is disabled, the app falls back to the built-in clear-sky curve.
+
+- `MICROGRID_WEATHER_FORECAST_ENABLED=true|false` (default `true`)
+- `MICROGRID_WEATHER_LATITUDE` / `MICROGRID_WEATHER_LONGITUDE` (default: Harare-ish `-17.8`, `31.05`)
+- `MICROGRID_WEATHER_PV_CAPACITY_KW` — nameplate kW for the forecast (default `1.0`)
+- `MICROGRID_WEATHER_PANEL_DERATE` — multiply `shortwave/1000 × capacity` (default `0.85`, inverter + mismatch)
 
 ## End-to-end commands (copy-paste)
 
@@ -105,5 +103,26 @@ Ordered steps with descriptions: **`scripts/train_and_run.md`**
 
 1. Run Mosquitto (MQTT broker) on the Pi.
 2. Flash ESP32 firmware; point it at the broker.
-3. In backend config, set `USE_HARDWARE_SIMULATION=false` and set MQTT host/port.
+3. In backend config, set `MICROGRID_USE_HARDWARE_SIMULATION=false` and set MQTT host/port.
 4. Backend MQTT ingest service will replace simulator data.
+
+## Raspberry Pi emulator (MQTT contract)
+
+You can emulate a Pi gateway today and keep the same MQTT contract when the real Pi arrives.
+
+1. Start broker:
+   - `mosquitto -p 1883`
+2. Start backend in hardware-ingest mode:
+   - `MICROGRID_USE_HARDWARE_SIMULATION=false MICROGRID_MQTT_HOST=localhost MICROGRID_MQTT_PORT=1883 PYTHONPATH=.. uvicorn app.main:app --reload --port 8000`
+3. Start Pi emulator (from project root):
+   - `python -m simulator.pi_emulator --host localhost --port 1883 --topic-prefix microgrid --interval-seconds 5`
+
+Topics:
+- Telemetry in:
+  - `microgrid/sensors/pv`
+  - `microgrid/sensors/battery`
+  - `microgrid/sensors/load/<appliance_external_id>`
+- Relay command out (backend -> Pi):
+  - `microgrid/cmd/relay/<appliance_external_id>` with payload `{"is_on": true|false, ...}`
+- Relay ack in (Pi -> backend, informational):
+  - `microgrid/ack/relay/<appliance_external_id>`

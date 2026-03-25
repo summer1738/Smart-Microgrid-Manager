@@ -2,6 +2,7 @@
 IEBA (Intelligent Energy Budgeting Algorithm).
 MILP: maximize weighted critical load uptime subject to SOC >= soc_min and energy balance.
 """
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -9,6 +10,48 @@ from pulp import LpBinary, LpMaximize, LpProblem, LpVariable, PULP_CBC_CMD, lpSu
 
 # Efficiency for energy balance (same for charge/discharge). 1.0 keeps problems feasible with long nights.
 EFF = 1.0
+
+
+def _parse_schedule_prefs(raw: Any) -> dict:
+    """
+    schedule_prefs is stored as JSON string in Appliance.schedule_prefs.
+    Supported shapes:
+      - {"mode":"max_possible"}
+      - {"mode":"preferred_times","hard":false,"bonus":20,"windows":[{"start":"07:00","end":"09:00"}]}
+    """
+    if raw is None:
+        return {"mode": "max_possible"}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            return json.loads(raw)
+        except Exception:
+            return {"mode": "max_possible"}
+    return {"mode": "max_possible"}
+
+
+def _hhmm_to_hour(s: str) -> Optional[float]:
+    try:
+        parts = str(s).strip().split(":")
+        if len(parts) != 2:
+            return None
+        hh = int(parts[0])
+        mm = int(parts[1])
+        if not (0 <= hh <= 23 and 0 <= mm <= 59):
+            return None
+        return float(hh) + float(mm) / 60.0
+    except Exception:
+        return None
+
+
+def _in_window(hour: float, start: float, end: float) -> bool:
+    # Supports wrap-around windows (e.g., 22:00–06:00).
+    if start == end:
+        return False
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end
 
 
 def run_ieba(
@@ -39,6 +82,7 @@ def run_ieba(
     P = [(app["rated_watts"] / 1000.0) for app in app_list]
     # Weights: P1=100, P2=10, P3=1
     W = [100 if app.get("priority") == 1 else (10 if app.get("priority") == 2 else 1) for app in app_list]
+    prefs = [_parse_schedule_prefs(app.get("schedule_prefs")) for app in app_list]
 
     prob = LpProblem("IEBA", LpMaximize)
     # x[i,t] = 1 if appliance i is on in period t
@@ -47,8 +91,39 @@ def run_ieba(
         for t in range(T):
             x[i, t] = LpVariable(f"x_{i}_{t}", cat=LpBinary)
 
-    # Objective: max sum of weighted on-hours
-    prob += lpSum(W[i] * x[i, t] for i in range(n) for t in range(T))
+    # Preference bonus per (i,t): incentivize running inside preferred windows.
+    bonus = {}
+    hard_forbid = {}
+    for i in range(n):
+        pref = prefs[i] or {"mode": "max_possible"}
+        mode = str(pref.get("mode") or "max_possible")
+        if mode != "preferred_times":
+            for t in range(T):
+                bonus[i, t] = 0.0
+                hard_forbid[i, t] = False
+            continue
+        windows = pref.get("windows") or []
+        hard = bool(pref.get("hard", False))
+        # Default bonus by priority if not provided.
+        default_bonus = 40.0 if app_list[i].get("priority") == 1 else (15.0 if app_list[i].get("priority") == 2 else 5.0)
+        b = float(pref.get("bonus", default_bonus))
+        for t in range(T):
+            ts = base_ts + timedelta(hours=t * dt_h)
+            hour = ts.hour + ts.minute / 60.0
+            preferred = False
+            for w in windows:
+                st = _hhmm_to_hour(w.get("start"))
+                en = _hhmm_to_hour(w.get("end"))
+                if st is None or en is None:
+                    continue
+                if _in_window(hour, st, en):
+                    preferred = True
+                    break
+            bonus[i, t] = b if preferred else 0.0
+            hard_forbid[i, t] = (hard and (not preferred))
+
+    # Objective: max weighted on-hours + preference bonus
+    prob += lpSum((W[i] + bonus[i, t]) * x[i, t] for i in range(n) for t in range(T))
 
     # SOC variables (continuous). Allow up to 150 so equality is feasible when PV > load (battery would be “capped” in reality).
     soc_min = soc_min_percent
@@ -67,6 +142,12 @@ def run_ieba(
         pv_t = forecast_generation_kw[t]
         load_t = lpSum(P[i] * x[i, t] for i in range(n))
         prob += soc[t + 1] == soc[t] + (pv_t * c) - load_t * c
+
+    # Hard preference: forbid running outside preferred windows (if configured)
+    for i in range(n):
+        for t in range(T):
+            if hard_forbid.get((i, t)):
+                prob += x[i, t] == 0
 
     prob.solve(PULP_CBC_CMD(msg=False))
     # 1=Optimal, 0=Not Solved, -1=Infeasible, -2=Unbounded, -3=Undefined, -4=Unbounded
