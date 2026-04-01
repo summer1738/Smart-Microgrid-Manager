@@ -8,6 +8,7 @@ from typing import List, Optional, Tuple
 from app.config import settings
 from app.services.weather_open_meteo import (
     build_hour_index,
+    fetch_forecast_extended,
     fetch_hourly_weather,
     lookup_hour,
 )
@@ -189,3 +190,73 @@ async def generate_hybrid_forecast(
     cons = m_load
     msg = f"Hybrid forecast: PV={'Open-Meteo' if use_weather_pv else 'LSTM'}; load=LSTM. {w_msg if use_weather_pv else m_msg}"
     return m_ts, gen, cons, msg
+
+
+async def generate_long_range_generation_forecast(
+    forecast_days: int = 16,
+) -> dict:
+    """
+    Long-range expected PV production using the maximum weather horizon available.
+    Returns hourly expected PV power and daily expected PV energy.
+    """
+    try:
+        from app.database import async_session
+
+        async with async_session() as session:
+            ws = await get_weather_settings(session)
+        cap = float(ws["weather_pv_capacity_kw"])
+        derate = float(ws["weather_panel_derate"])
+        enabled = bool(ws["weather_forecast_enabled"])
+        lat = float(ws["weather_latitude"])
+        lon = float(ws["weather_longitude"])
+    except Exception:
+        cap = float(settings.weather_pv_capacity_kw)
+        derate = float(settings.weather_panel_derate)
+        enabled = bool(settings.weather_forecast_enabled)
+        lat = float(settings.weather_latitude)
+        lon = float(settings.weather_longitude)
+
+    days = min(16, max(1, int(forecast_days)))
+    if not enabled:
+        return {
+            "forecast_available": False,
+            "forecast_days": days,
+            "message": "Weather forecast disabled; long-range PV forecast unavailable.",
+            "hourly_generation_kw": [],
+            "daily_generation_kwh": [],
+        }
+
+    wx = await fetch_forecast_extended(lat, lon, forecast_days=days)
+    if wx is None:
+        return {
+            "forecast_available": False,
+            "forecast_days": days,
+            "message": "Could not fetch long-range weather forecast.",
+            "hourly_generation_kw": [],
+            "daily_generation_kwh": [],
+        }
+
+    times = wx["times"]
+    sw = wx["shortwave_radiation"]
+    hourly = []
+    daily: dict[str, float] = {}
+    for i, ts in enumerate(times):
+        kw = round(_pv_from_shortwave_kw(sw[i] if i < len(sw) else 0.0, cap, derate), 4)
+        hourly.append({"timestamp": ts.isoformat(), "expected_generation_kw": kw})
+        d = ts.date().isoformat()
+        daily[d] = daily.get(d, 0.0) + kw
+
+    daily_rows = [
+        {"date": d, "expected_generation_kwh": round(kwh, 3)}
+        for d, kwh in sorted(daily.items())
+    ]
+    return {
+        "forecast_available": True,
+        "forecast_days": int(wx.get("forecast_days", days)),
+        "location": {"latitude": lat, "longitude": lon},
+        "pv_nameplate_kw": cap,
+        "panel_derate": derate,
+        "message": f"Expected PV generation forecast generated for {len(daily_rows)} days (maximum supported horizon).",
+        "hourly_generation_kw": hourly,
+        "daily_generation_kwh": daily_rows,
+    }

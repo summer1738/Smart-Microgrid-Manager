@@ -54,6 +54,19 @@ function prefSummary(schedule_prefs) {
   }
 }
 
+function usageModeLabel(mode) {
+  return mode === 'on_demand' ? 'On-demand' : 'Scheduled'
+}
+
+function decisionTone(decision) {
+  if (decision === 'approved_now') return { border: '#22c55e', bg: '#052e16', text: '#bbf7d0', title: 'Approved now' }
+  if (decision === 'deferred') return { border: '#f59e0b', bg: '#3f2a05', text: '#fde68a', title: 'Deferred' }
+  if (decision === 'rejected') return { border: '#ef4444', bg: '#3f0d12', text: '#fecaca', title: 'Rejected' }
+  return { border: '#475569', bg: '#0f172a', text: '#cbd5e1', title: 'Decision' }
+}
+
+const QUICK_RUN_MINUTES = [15, 30, 60]
+
 export default function Appliances({ api }) {
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
@@ -62,6 +75,8 @@ export default function Appliances({ api }) {
     name: '',
     priority: 2,
     rated_watts: 100,
+    usage_mode: 'scheduled',
+    default_run_minutes: 30,
     run_mode: 'max_possible', // max_possible | preferred_times
     hard: false,
     windows: [{ start: '07:00', end: '09:00' }],
@@ -72,10 +87,14 @@ export default function Appliances({ api }) {
     name: '',
     priority: 2,
     rated_watts: 100,
+    usage_mode: 'scheduled',
+    default_run_minutes: 30,
     run_mode: 'max_possible',
     hard: false,
     windows: [{ start: '07:00', end: '09:00' }],
   })
+  const [runRequestBusyId, setRunRequestBusyId] = useState(null)
+  const [runRequestResult, setRunRequestResult] = useState(null)
 
   const fetchList = async () => {
     try {
@@ -109,6 +128,8 @@ export default function Appliances({ api }) {
           name: form.name,
           priority: form.priority,
           rated_watts: form.rated_watts,
+          usage_mode: form.usage_mode,
+          default_run_minutes: form.default_run_minutes,
           schedule_prefs,
         }),
       })
@@ -120,6 +141,8 @@ export default function Appliances({ api }) {
         name: '',
         priority: 2,
         rated_watts: 100,
+        usage_mode: 'scheduled',
+        default_run_minutes: 30,
         run_mode: 'max_possible',
         hard: false,
         windows: [{ start: '07:00', end: '09:00' }],
@@ -144,6 +167,8 @@ export default function Appliances({ api }) {
       name: a.name,
       priority: a.priority,
       rated_watts: a.rated_watts,
+      usage_mode: a.usage_mode || 'scheduled',
+      default_run_minutes: a.default_run_minutes || 30,
       run_mode: pref.mode === 'preferred_times' ? 'preferred_times' : 'max_possible',
       hard: !!pref.hard,
       windows: Array.isArray(pref.windows) && pref.windows.length ? pref.windows : [{ start: '07:00', end: '09:00' }],
@@ -167,6 +192,8 @@ export default function Appliances({ api }) {
           name: editForm.name,
           priority: editForm.priority,
           rated_watts: editForm.rated_watts,
+          usage_mode: editForm.usage_mode,
+          default_run_minutes: editForm.default_run_minutes,
           schedule_prefs,
         }),
       })
@@ -178,6 +205,31 @@ export default function Appliances({ api }) {
       await fetchList()
     } catch (e) {
       setError(e.message)
+    }
+  }
+
+  const requestRunNow = async (appliance, durationMinutes = null) => {
+    setRunRequestBusyId(appliance.id)
+    setRunRequestResult(null)
+    try {
+      const requestedMinutes = durationMinutes || appliance.default_run_minutes || 30
+      const r = await fetch(`${api}/appliances/${appliance.id}/request-run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ duration_minutes: requestedMinutes }),
+      })
+      const data = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(data.detail || r.statusText)
+      setRunRequestResult(data)
+      await fetchList()
+    } catch (e) {
+      setRunRequestResult({
+        appliance_name: appliance.name,
+        decision: 'rejected',
+        message: e.message,
+      })
+    } finally {
+      setRunRequestBusyId(null)
     }
   }
 
@@ -244,10 +296,55 @@ export default function Appliances({ api }) {
           min={1}
           style={{ width: 100, padding: '0.5rem', borderRadius: 6, border: '1px solid #475569', background: '#1e293b', color: '#e2e8f0' }}
         />
+        <select
+          value={form.usage_mode}
+          onChange={(e) => setForm((f) => ({ ...f, usage_mode: e.target.value }))}
+          style={{ padding: '0.5rem', borderRadius: 6, border: '1px solid #475569', background: '#1e293b', color: '#e2e8f0' }}
+        >
+          <option value="scheduled">Scheduled</option>
+          <option value="on_demand">On-demand</option>
+        </select>
+        <input
+          type="number"
+          placeholder="Default run (min)"
+          value={form.default_run_minutes}
+          onChange={(e) => setForm((f) => ({ ...f, default_run_minutes: Number(e.target.value) || 30 }))}
+          min={5}
+          style={{ width: 140, padding: '0.5rem', borderRadius: 6, border: '1px solid #475569', background: '#1e293b', color: '#e2e8f0' }}
+        />
         <button type="submit" disabled={saving} style={{ padding: '0.5rem 1rem', borderRadius: 6, background: '#0ea5e9', color: '#0f172a', border: 'none', fontWeight: 600 }}>
           {saving ? 'Adding…' : 'Add appliance'}
         </button>
       </form>
+      {runRequestResult && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: '0.8rem 1rem',
+            borderRadius: 8,
+            border: `1px solid ${decisionTone(runRequestResult.decision).border}`,
+            background: decisionTone(runRequestResult.decision).bg,
+            color: decisionTone(runRequestResult.decision).text,
+            maxWidth: 920,
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>
+            {decisionTone(runRequestResult.decision).title}: {runRequestResult.appliance_name}
+          </div>
+          <div style={{ fontSize: '0.9rem' }}>{runRequestResult.message}</div>
+          {runRequestResult.recommended_start_ts && (
+            <div style={{ marginTop: 6, fontSize: '0.85rem', color: '#f8fafc' }}>
+              Recommended start: {new Date(runRequestResult.recommended_start_ts).toLocaleString()}
+            </div>
+          )}
+          {runRequestResult.scheduled_start_ts && runRequestResult.scheduled_end_ts && (
+            <div style={{ marginTop: 6, fontSize: '0.85rem', color: '#f8fafc' }}>
+              Scheduled: {new Date(runRequestResult.scheduled_start_ts).toLocaleString()} to{' '}
+              {new Date(runRequestResult.scheduled_end_ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </div>
+          )}
+        </div>
+      )}
 
       <div style={{ marginTop: 12, background: '#1e293b', padding: '0.75rem 1rem', borderRadius: 8, maxWidth: 920 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
@@ -340,6 +437,7 @@ export default function Appliances({ api }) {
             <th style={{ textAlign: 'left', padding: '0.5rem' }}>Name</th>
             <th style={{ textAlign: 'left', padding: '0.5rem' }}>Priority</th>
             <th style={{ textAlign: 'right', padding: '0.5rem' }}>Rated (W)</th>
+            <th style={{ textAlign: 'left', padding: '0.5rem' }}>Mode</th>
             <th style={{ textAlign: 'left', padding: '0.5rem' }}>Run preference</th>
             <th style={{ textAlign: 'right', padding: '0.5rem' }}>Actions</th>
           </tr>
@@ -389,6 +487,31 @@ export default function Appliances({ api }) {
               </td>
               <td style={{ padding: '0.5rem' }}>
                 {editingId === a.id ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <select
+                      value={editForm.usage_mode}
+                      onChange={(e) => setEditForm((f) => ({ ...f, usage_mode: e.target.value }))}
+                      style={{ padding: '0.25rem', borderRadius: 4, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
+                    >
+                      <option value="scheduled">Scheduled</option>
+                      <option value="on_demand">On-demand</option>
+                    </select>
+                    <input
+                      type="number"
+                      value={editForm.default_run_minutes}
+                      min={5}
+                      onChange={(e) => setEditForm((f) => ({ ...f, default_run_minutes: Number(e.target.value) || 30 }))}
+                      style={{ width: 120, padding: '0.25rem', borderRadius: 4, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
+                    />
+                  </div>
+                ) : (
+                  <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
+                    {usageModeLabel(a.usage_mode)}{a.usage_mode === 'on_demand' ? ` (${a.default_run_minutes || 30} min)` : ''}
+                  </span>
+                )}
+              </td>
+              <td style={{ padding: '0.5rem' }}>
+                {editingId === a.id ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
                     <select
                       value={editForm.run_mode}
@@ -398,7 +521,7 @@ export default function Appliances({ api }) {
                       <option value="max_possible">Run as long as possible</option>
                       <option value="preferred_times">Preferred times</option>
                     </select>
-                    {editForm.run_mode === 'preferred_times' && (
+                    {editForm.usage_mode === 'scheduled' && editForm.run_mode === 'preferred_times' && (
                       <>
                         <ToggleSwitch checked={editForm.hard} onChange={(v) => setEditForm((f) => ({ ...f, hard: v }))} label="Hard (only within windows)" />
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -451,7 +574,9 @@ export default function Appliances({ api }) {
                     )}
                   </div>
                 ) : (
-                  <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>{prefSummary(a.schedule_prefs)}</span>
+                  <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>
+                    {a.usage_mode === 'on_demand' ? 'Manual request when needed' : prefSummary(a.schedule_prefs)}
+                  </span>
                 )}
               </td>
               <td style={{ textAlign: 'right', padding: '0.5rem' }}>
@@ -474,6 +599,30 @@ export default function Appliances({ api }) {
                   </>
                 ) : (
                   <>
+                    {a.usage_mode === 'on_demand' && (
+                      <>
+                        {QUICK_RUN_MINUTES.map((mins) => (
+                          <button
+                            key={mins}
+                            type="button"
+                            onClick={() => requestRunNow(a, mins)}
+                            disabled={runRequestBusyId === a.id}
+                            style={{
+                              marginRight: 6,
+                              marginBottom: 4,
+                              padding: '0.25rem 0.5rem',
+                              borderRadius: 4,
+                              background: mins === (a.default_run_minutes || 30) ? '#9333ea' : '#a855f7',
+                              color: '#f8fafc',
+                              border: 'none',
+                              fontSize: '0.8rem',
+                            }}
+                          >
+                            {runRequestBusyId === a.id ? 'Checking…' : `${mins}m`}
+                          </button>
+                        ))}
+                      </>
+                    )}
                     <button
                       type="button"
                       onClick={() => startEdit(a)}

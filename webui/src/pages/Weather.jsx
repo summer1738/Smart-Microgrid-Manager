@@ -10,18 +10,26 @@ function shortDate(iso) {
 
 export default function Weather({ api }) {
   const [data, setData] = useState(null)
+  const [longRange, setLongRange] = useState(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
 
   useEffect(() => {
     let cancelled = false
-    fetch(`${api}/forecast/weather-insights?forecast_days=16&history_days=30`)
-      .then((r) => {
+    Promise.all([
+      fetch(`${api}/forecast/weather-insights?forecast_days=16&history_days=30`).then((r) => {
         if (!r.ok) throw new Error(r.statusText)
         return r.json()
-      })
-      .then((j) => {
-        if (!cancelled) setData(j)
+      }),
+      fetch(`${api}/forecast/generation-long-range?forecast_days=16`).then((r) => {
+        if (!r.ok) throw new Error(r.statusText)
+        return r.json()
+      }),
+    ])
+      .then(([weatherData, longRangeData]) => {
+        if (cancelled) return
+        setData(weatherData)
+        setLongRange(longRangeData)
       })
       .catch((e) => {
         if (!cancelled) setErr(e.message)
@@ -51,6 +59,25 @@ export default function Weather({ api }) {
       values: rows.map((r) => r.actual_pv_kwh ?? 0),
     }
   }, [data])
+
+  const longRangeDailyChart = useMemo(() => {
+    const rows = longRange?.daily_generation_kwh || []
+    if (!rows.length) return null
+    return {
+      labels: rows.map((r) => shortDate(r.date)),
+      values: rows.map((r) => r.expected_generation_kwh ?? 0),
+    }
+  }, [longRange])
+
+  const longRangeHourlyChart = useMemo(() => {
+    const rows = longRange?.hourly_generation_kw || []
+    if (!rows.length) return null
+    const trimmed = rows.slice(0, Math.min(rows.length, 72))
+    return {
+      labels: trimmed.map((r) => r.timestamp),
+      values: trimmed.map((r) => r.expected_generation_kw ?? 0),
+    }
+  }, [longRange])
 
   if (loading) return <p>Loading weather & PV insights…</p>
   if (err) return <p style={{ color: '#f87171' }}>Error: {err}</p>
@@ -98,6 +125,21 @@ export default function Weather({ api }) {
         </section>
       )}
 
+      {longRange?.forecast_available && (
+        <section
+          style={{
+            marginTop: '1.5rem',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+            gap: '1rem',
+          }}
+        >
+          <StatCard title="Longest generation horizon" value={`${longRange.forecast_days ?? '–'} days`} />
+          <StatCard title="PV nameplate used" value={`${longRange.pv_nameplate_kw ?? '–'} kW`} />
+          <StatCard title="Derate used" value={longRange.panel_derate != null ? `${longRange.panel_derate}` : '–'} />
+        </section>
+      )}
+
       {forecastChart && (
         <section style={{ marginTop: '2rem', background: '#1e293b', padding: '1rem', borderRadius: 8 }}>
           <h2 style={{ fontSize: '1rem', marginBottom: 8 }}>Expected PV energy by day (from weather)</h2>
@@ -109,6 +151,36 @@ export default function Weather({ api }) {
             labels={forecastChart.labels}
             height={200}
             title="kWh/day"
+          />
+        </section>
+      )}
+
+      {longRangeDailyChart && (
+        <section style={{ marginTop: '1.5rem', background: '#1e293b', padding: '1rem', borderRadius: 8 }}>
+          <h2 style={{ fontSize: '1rem', marginBottom: 8 }}>Longest-range expected generation by day</h2>
+          <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: 0 }}>
+            Maximum currently supported PV production forecast horizon from weather data.
+          </p>
+          <MultiLineChart
+            series={[{ name: 'Expected kWh/day', color: '#84cc16', values: longRangeDailyChart.values }]}
+            labels={longRangeDailyChart.labels}
+            height={200}
+            title="kWh/day"
+          />
+        </section>
+      )}
+
+      {longRangeHourlyChart && (
+        <section style={{ marginTop: '1.5rem', background: '#1e293b', padding: '1rem', borderRadius: 8 }}>
+          <h2 style={{ fontSize: '1rem', marginBottom: 8 }}>Expected generation profile (next 72 hours)</h2>
+          <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: 0 }}>
+            Hourly expected PV output from the long-range forecast endpoint.
+          </p>
+          <MultiLineChart
+            series={[{ name: 'Expected kW', color: '#22c55e', values: longRangeHourlyChart.values }]}
+            labels={longRangeHourlyChart.labels}
+            height={220}
+            title="kW"
           />
         </section>
       )}

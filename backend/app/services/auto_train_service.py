@@ -2,7 +2,7 @@
 Optional background auto-train loop for LSTM checkpoints.
 
 This runs inside the backend process (env-var gated). It will:
-- export readings from sqlite DB to CSV
+- export readings from the MySQL database to CSV
 - prepare sequence datasets (gen + load)
 - train and overwrite ai/models/{gen_lstm,load_lstm}.pt
 
@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import sqlite3
 import sys
 import json
 import re
@@ -23,33 +22,29 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, Tuple
+from sqlalchemy import create_engine, text
 
 from app.config import settings
+from app.db_url import to_sync_database_url
 from app.services.system_settings_service import get_auto_train_enabled, set_auto_train_enabled
 
+import logging
+
+log = logging.getLogger("app.auto_train")
 
 def _project_root() -> Path:
     # backend/app/services -> backend -> project root (smart-microgrid-manager)
     return Path(__file__).resolve().parents[3]
 
 
-def _db_path() -> Path:
-    root = _project_root()
-    return root / "backend" / "microgrid.db"
-
-
-def _count_rows(db_path: Path) -> int:
-    if not db_path.exists():
-        return 0
-    conn = sqlite3.connect(str(db_path))
+def _count_rows() -> int:
     try:
-        cur = conn.execute("SELECT COUNT(*) FROM battery_readings")
-        row = cur.fetchone()
-        return int(row[0]) if row and row[0] is not None else 0
+        engine = create_engine(to_sync_database_url(str(settings.database_url)))
+        with engine.connect() as conn:
+            row = conn.execute(text("SELECT COUNT(*) FROM battery_readings")).scalar()
+            return int(row or 0)
     except Exception:
         return 0
-    finally:
-        conn.close()
 
 
 async def _run_cmd(args: list[str], cwd: Path, timeout_s: int) -> Tuple[int, str]:
@@ -187,16 +182,13 @@ class AutoTrainLoop:
                 if await get_auto_train_enabled():
                     async with self._running:
                         res = await self._maybe_train_once()
-                        # Keep this lightweight; shows in backend logs
-                        ts = datetime.now(timezone.utc).isoformat()
-                        print(f"[auto-train] {ts} ok={res.ok} {res.message}")
+                        log.info("auto-train run done ok=%s message=%s", res.ok, res.message)
                         if res.output and not res.ok:
-                            print(f"[auto-train] output:\n{res.output}")
+                            log.warning("auto-train output tail:\n%s", res.output[-8000:])
                         if res.ok:
                             await _maybe_stop_auto_train_on_mape(res.output or "")
             except Exception as e:  # noqa: BLE001
-                ts = datetime.now(timezone.utc).isoformat()
-                print(f"[auto-train] {ts} exception: {e!s}")
+                log.exception("auto-train loop exception: %s", e)
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=interval)
             except asyncio.TimeoutError:
@@ -204,8 +196,7 @@ class AutoTrainLoop:
 
     async def _maybe_train_once(self) -> AutoTrainResult:
         root = _project_root()
-        db_path = _db_path()
-        n_rows = _count_rows(db_path)
+        n_rows = _count_rows()
         if n_rows < int(settings.auto_train_min_samples):
             res = AutoTrainResult(
                 ok=False,
@@ -234,7 +225,17 @@ class AutoTrainLoop:
 
         # Export
         code, out = await _run_cmd(
-            [sys.executable, "-m", "ai.scripts.export_readings", "--hours", str(hours), "--output", str(csv_path)],
+            [
+                sys.executable,
+                "-m",
+                "ai.scripts.export_readings",
+                "--hours",
+                str(hours),
+                "--output",
+                str(csv_path),
+                "--database-url",
+                str(settings.database_url),
+            ],
             cwd=root,
             timeout_s=120,
         )

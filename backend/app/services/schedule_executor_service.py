@@ -14,8 +14,12 @@ from app.services.mqtt_ingest_service import publish_relay_command
 
 async def apply_schedule(session: AsyncSession, now: Optional[datetime] = None) -> Tuple[int, int]:
     """
-    Find schedule slots that are active now (start_ts <= now < end_ts), update
-    Appliance.is_on from planned_state, and mark those slots as "applied".
+    Apply the latest due pending slot for each appliance.
+
+    Expired pending rows are marked as skipped so missed controller ticks do not
+    leave stale schedule rows behind. The newest still-active pending row per
+    appliance is applied.
+
     Returns (slots_applied, appliances_updated).
     """
     now = now or datetime.now(timezone.utc)
@@ -24,18 +28,34 @@ async def apply_schedule(session: AsyncSession, now: Optional[datetime] = None) 
         .where(
             and_(
                 ScheduleSlot.start_ts <= now,
-                ScheduleSlot.end_ts > now,
                 ScheduleSlot.status == "pending",
             )
         )
+        .order_by(ScheduleSlot.appliance_id, ScheduleSlot.start_ts.desc())
     )
     slots = list(result.scalars().all())
     if not slots:
         return 0, 0
 
-    # Group by appliance_id; take latest planned_state if multiple slots (should be one per period)
-    app_id_to_state: dict[int, str] = {}
+    active_slots: list[ScheduleSlot] = []
+    seen_appliance_ids: set[int] = set()
     for slot in slots:
+        if slot.end_ts <= now:
+            slot.status = "skipped"
+            continue
+        if slot.appliance_id in seen_appliance_ids:
+            slot.status = "skipped"
+            continue
+        seen_appliance_ids.add(slot.appliance_id)
+        active_slots.append(slot)
+
+    if not active_slots:
+        await session.flush()
+        return 0, 0
+
+    # Group by appliance_id; take latest planned_state if multiple slots are due.
+    app_id_to_state: dict[int, str] = {}
+    for slot in active_slots:
         app_id_to_state[slot.appliance_id] = slot.planned_state
 
     # Update appliances
@@ -53,8 +73,9 @@ async def apply_schedule(session: AsyncSession, now: Optional[datetime] = None) 
             if not settings.use_hardware_simulation:
                 await publish_relay_command(app.external_id, new_on)
 
-    # Mark slots as applied
-    for slot in slots:
+    # Mark chosen active rows as applied.
+    for slot in active_slots:
         slot.status = "applied"
 
-    return len(slots), updated
+    await session.flush()
+    return len(active_slots), updated

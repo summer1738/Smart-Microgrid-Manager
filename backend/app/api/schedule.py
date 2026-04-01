@@ -12,11 +12,10 @@ from app.schemas import ScheduleOut, ScheduleSlotOut
 from app.services.forecast_service import generate_hybrid_forecast
 from app.services.ieba_service import run_ieba
 from app.services.schedule_executor_service import apply_schedule
+from app.services.system_settings_service import ensure_system_settings_row
 
 router = APIRouter(prefix="/schedule", tags=["schedule"])
 
-CAPACITY_KWH = 2.4
-SOC_MIN_PERCENT = 40.0
 HORIZON_HOURS = 24
 RESOLUTION_HOURS = 1.0
 
@@ -61,11 +60,17 @@ async def run_schedule(db: AsyncSession = Depends(get_db)) -> ScheduleOut:
     bat = r.scalar_one_or_none()
     initial_soc = bat.soc_percent if bat else 70.0
 
+    # Microgrid sizing (from DB settings; seeded defaults on first run)
+    sys_row = await ensure_system_settings_row(db)
+    capacity_kwh = float(sys_row.battery_capacity_kwh)
+    soc_min_percent = float(sys_row.soc_min_percent)
+    inverter_capacity_kw = float(sys_row.inverter_capacity_kw)
+
     # Appliances
     r = await db.execute(select(Appliance).order_by(Appliance.priority, Appliance.id))
-    appliances_db = list(r.scalars().all())
+    appliances_db = [a for a in r.scalars().all() if getattr(a, "usage_mode", "scheduled") != "on_demand"]
     if not appliances_db:
-        raise HTTPException(400, "No appliances registered. Add appliances first.")
+        raise HTTPException(400, "No scheduled appliances registered. Add scheduled appliances first.")
     appliances = [
         {
             "id": a.external_id,
@@ -91,10 +96,11 @@ async def run_schedule(db: AsyncSession = Depends(get_db)) -> ScheduleOut:
         forecast_consumption_kw=consumption_kw,
         appliances=appliances,
         initial_soc_percent=initial_soc,
-        capacity_kwh=CAPACITY_KWH,
-        soc_min_percent=SOC_MIN_PERCENT,
+        capacity_kwh=capacity_kwh,
+        soc_min_percent=soc_min_percent,
         time_resolution_hours=RESOLUTION_HOURS,
         base_ts=now,
+        inverter_capacity_kw=inverter_capacity_kw,
     )
 
     # Delete future slots and insert new ones

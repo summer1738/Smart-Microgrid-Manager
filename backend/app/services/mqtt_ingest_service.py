@@ -20,6 +20,10 @@ from app.services.mqtt_topics import (
     sensor_pv_topic,
 )
 
+import logging
+
+log = logging.getLogger("app.mqtt")
+
 try:
     import paho.mqtt.client as mqtt
 except Exception:  # pragma: no cover - optional dependency at runtime
@@ -159,6 +163,7 @@ class MqttIngestLoop:
         self._client = client
         self._running = True
         _mqtt_health["running"] = True
+        log.info("MQTT ingest started host=%s port=%s prefix=%s", settings.mqtt_host, settings.mqtt_port, settings.mqtt_topic_prefix)
 
     async def stop(self) -> None:
         if not self._running or self._client is None:
@@ -169,13 +174,16 @@ class MqttIngestLoop:
         self._client = None
         _mqtt_health["running"] = False
         _mqtt_health["connected"] = False
+        log.info("MQTT ingest stopped")
 
     def _on_connect(self, client: mqtt.Client, userdata: Any, flags: Any, rc: int) -> None:
         # Subscriptions are already set in start(); this callback exists for reconnect behavior.
         if rc != 0:
             _mqtt_health["connected"] = False
+            log.warning("MQTT connect failed rc=%s", rc)
             return
         _mqtt_health["connected"] = True
+        log.info("MQTT connected")
         prefix = settings.mqtt_topic_prefix
         client.subscribe(sensor_pv_topic(prefix), qos=1)
         client.subscribe(sensor_battery_topic(prefix), qos=1)
@@ -189,6 +197,7 @@ class MqttIngestLoop:
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
         except Exception:
+            log.debug("MQTT message invalid json topic=%s", topic)
             return
         prefix = settings.mqtt_topic_prefix
         _mqtt_health["last_message_at"] = _now_iso()

@@ -214,7 +214,7 @@ export default function Training({ api }) {
           <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Scheduled training</h2>
           <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: 0 }}>
             Every <strong>{status.auto_train_interval_minutes}</strong> minutes (env), using the last{' '}
-            <strong>{status.auto_train_history_hours}</strong> hours of data. Toggle below; value is stored in SQLite.
+            <strong>{status.auto_train_history_hours}</strong> hours of data. Toggle below; value is stored in MySQL.
           </p>
           <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: autoSaving ? 'wait' : 'pointer' }}>
             <ToggleSwitch

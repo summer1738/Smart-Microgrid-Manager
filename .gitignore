@@ -32,8 +32,6 @@ Thumbs.db
 
 # Local runtime / training artifacts
 *.db
-*.sqlite
-*.sqlite3
 ai/models/*.pt
 ai/data/*.npz
 data/last_train_result.json

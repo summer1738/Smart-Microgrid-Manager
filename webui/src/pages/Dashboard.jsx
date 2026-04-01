@@ -75,6 +75,7 @@ export default function Dashboard({ api }) {
       soc: pts.map((p) => p.soc_percent ?? 0),
       pv: pts.map((p) => p.power_kw ?? 0),
       load: pts.map((p) => p.total_load_kw ?? 0),
+      exportable: pts.map((p) => p.available_export_kw ?? 0),
       labels: pts.map((p) => (p.timestamp ? new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '')),
     }
   }, [history])
@@ -83,18 +84,33 @@ export default function Dashboard({ api }) {
   if (error) return <p style={{ color: '#f87171' }}>Error: {error}</p>
   if (!status) return null
 
-  const { pv, battery, loads, total_load_kw, simulated } = status
+  const {
+    pv,
+    battery,
+    loads,
+    total_load_kw,
+    available_export_kw,
+    battery_is_charging,
+    battery_status_label,
+    battery_status_level,
+    manual_override_detected,
+    manual_override_messages,
+    simulated,
+  } = status
   const ts = status.timestamp ? new Date(status.timestamp).toLocaleString() : '–'
   const loadBars = loads
     .map((l) => {
       const on = l.state === 'on'
-      const color = on ? '#22c55e' : '#64748b'
+      const color = l.unexpected_override ? '#ef4444' : on ? '#22c55e' : '#64748b'
       return {
         label: l.name,
         value: l.power_kw,
         color,
         hoverTitle: showColorHover
           ? `${l.name}: ${l.power_kw.toFixed(3)} kW. Bar fill — ${
+              l.unexpected_override
+                ? 'red: unexpected manual override detected (load appears ON outside the planned schedule).'
+                : 
               on
                 ? 'green: appliance ON (drawing power).'
                 : 'slate gray: appliance OFF or shedded (no intentional draw).'
@@ -104,6 +120,8 @@ export default function Dashboard({ api }) {
     })
     .sort((a, b) => b.value - a.value)
   const mqttBadge = getMqttBadge(mqttHealth)
+  const batteryStatusColor =
+    battery_status_level === 'success' ? '#22c55e' : battery_status_level === 'warning' ? '#f59e0b' : '#94a3b8'
 
   return (
     <div>
@@ -149,6 +167,14 @@ export default function Dashboard({ api }) {
           Running in <strong>simulation mode</strong>. Background loop updates readings; charts use last 24h history.
         </p>
       )}
+      {manual_override_detected && (
+        <div style={{ background: '#3f0d12', border: '1px solid #ef4444', padding: '0.7rem 0.85rem', borderRadius: 8, marginTop: '0.75rem' }}>
+          <div style={{ color: '#fecaca', fontWeight: 700, marginBottom: 4 }}>Unplanned appliance use detected</div>
+          <div style={{ color: '#fecaca', fontSize: '0.9rem' }}>
+            {manual_override_messages?.length ? manual_override_messages.join(' ') : 'A load appears to be running outside the planned schedule.'}
+          </div>
+        </div>
+      )}
       <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Last updated: {ts}</p>
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem', marginTop: '1.5rem', alignItems: 'start' }}>
@@ -156,7 +182,19 @@ export default function Dashboard({ api }) {
         <div style={{ background: '#1e293b', padding: '1rem', borderRadius: 8, display: 'flex', justifyContent: 'center' }}>
           <DonutChart value={battery.soc_percent} label="Battery SOC" color="#0ea5e9" />
         </div>
+        <div style={{ background: '#1e293b', padding: '1rem', borderRadius: 8, border: `1px solid ${batteryStatusColor}` }}>
+          <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>Battery status</div>
+          <div style={{ fontSize: '1.1rem', fontWeight: 600, marginTop: 6, color: batteryStatusColor }}>
+            {battery_is_charging ? 'Charging' : 'Not charging'}
+          </div>
+          <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginTop: 6 }}>{battery_status_label}</div>
+        </div>
         <Card title="Total load" value={`${total_load_kw.toFixed(2)} kW`} sub={`${loads.length} circuits`} />
+        <Card
+          title="Available to export"
+          value={`${(available_export_kw ?? 0).toFixed(2)} kW`}
+          sub="Only counts when the battery is full and PV still exceeds the applied IEBA load"
+        />
       </section>
 
       {chartData && (
@@ -169,10 +207,11 @@ export default function Dashboard({ api }) {
             height={160}
           />
           <MultiLineChart
-            title="PV (kW) vs total load (kW)"
+            title="PV (kW) vs total load (kW) vs exportable surplus (kW)"
             series={[
               { name: 'PV kW', color: '#22c55e', values: chartData.pv },
               { name: 'Load kW', color: '#f59e0b', values: chartData.load },
+              { name: 'Exportable kW', color: '#a855f7', values: chartData.exportable },
             ]}
             labels={chartData.labels}
             height={180}
@@ -228,7 +267,9 @@ export default function Dashboard({ api }) {
             <tr key={l.appliance_id} style={{ borderBottom: '1px solid #334155' }}>
               <td style={{ padding: '0.5rem' }}>{l.name}</td>
               <td style={{ textAlign: 'right', padding: '0.5rem' }}>{l.power_kw.toFixed(3)}</td>
-              <td style={{ padding: '0.5rem' }}>{l.state}</td>
+              <td style={{ padding: '0.5rem', color: l.unexpected_override ? '#f87171' : undefined }}>
+                {l.state}{l.unexpected_override ? ' (unexpected override)' : ''}
+              </td>
             </tr>
           ))}
         </tbody>

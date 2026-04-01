@@ -13,7 +13,11 @@ from app.config import settings
 from app.database import get_db
 from app.models import BatteryReading, LoadReading, PvReading
 from app.schemas import ForecastOut, ForecastSeries, ModelMonitorOut
-from app.services.forecast_service import generate_forecast_with_weather, generate_hybrid_forecast
+from app.services.forecast_service import (
+    generate_forecast_with_weather,
+    generate_hybrid_forecast,
+    generate_long_range_generation_forecast,
+)
 from app.services.ml_forecast_service import inspect_forecast_models, try_model_forecast
 from app.services.system_settings_service import get_auto_train_enabled
 from app.services.auto_train_service import get_last_train_result
@@ -71,6 +75,17 @@ async def get_weather_insights(
     return payload
 
 
+@router.get("/generation-long-range")
+async def get_generation_long_range(
+    forecast_days: int = Query(16, ge=1, le=16, description="Maximum supported long-range generation horizon."),
+) -> dict:
+    """
+    Return expected PV production for as long as the weather provider can support.
+    Currently this is up to 16 days (Open-Meteo limit).
+    """
+    return await generate_long_range_generation_forecast(forecast_days=forecast_days)
+
+
 @router.get("/training-status")
 async def get_training_status(db: AsyncSession = Depends(get_db)) -> dict:
     """
@@ -97,7 +112,7 @@ async def get_training_status(db: AsyncSession = Depends(get_db)) -> dict:
         "auto_train_history_hours": int(settings.auto_train_history_hours),
         "last_train": last_train,
         "pipeline_steps": [
-            "Export readings from SQLite to CSV",
+            "Export readings from MySQL to CSV",
             "prepare_dataset (load + PV targets)",
             "lstm_train → ai/models/load_lstm.pt and gen_lstm.pt",
         ],

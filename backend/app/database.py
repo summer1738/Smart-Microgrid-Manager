@@ -1,6 +1,7 @@
 """Database session and lifecycle."""
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
@@ -16,34 +17,25 @@ async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Lightweight SQLite migration for adding new columns to system_settings.
-        # This avoids introducing Alembic for this project.
-        await conn.exec_driver_sql(
-            "CREATE TABLE IF NOT EXISTS system_settings (id INTEGER PRIMARY KEY)"
+        await conn.run_sync(_run_lightweight_migrations)
+
+
+def _run_lightweight_migrations(sync_conn) -> None:
+    """
+    Lightweight additive migrations for existing MySQL tables.
+    """
+    insp = inspect(sync_conn)
+    if "appliances" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("appliances")}
+    if "usage_mode" not in cols:
+        sync_conn.exec_driver_sql(
+            "ALTER TABLE appliances ADD COLUMN usage_mode VARCHAR(20) NOT NULL DEFAULT 'scheduled'"
         )
-        cols = await conn.exec_driver_sql("PRAGMA table_info(system_settings)")
-        existing = {row[1] for row in cols.fetchall()}  # type: ignore[index]
-
-        def _add(col_sql: str, name: str) -> None:
-            if name in existing:
-                return
-            # SQLite supports ADD COLUMN with a default.
-            # Use IF NOT EXISTS via Python guard (older SQLite).
-            return None
-
-        # Add columns if missing
-        if "auto_train_enabled" not in existing:
-            await conn.exec_driver_sql("ALTER TABLE system_settings ADD COLUMN auto_train_enabled BOOLEAN DEFAULT 0")
-        if "weather_forecast_enabled" not in existing:
-            await conn.exec_driver_sql("ALTER TABLE system_settings ADD COLUMN weather_forecast_enabled BOOLEAN DEFAULT 1")
-        if "weather_latitude" not in existing:
-            await conn.exec_driver_sql("ALTER TABLE system_settings ADD COLUMN weather_latitude FLOAT DEFAULT -17.8")
-        if "weather_longitude" not in existing:
-            await conn.exec_driver_sql("ALTER TABLE system_settings ADD COLUMN weather_longitude FLOAT DEFAULT 31.05")
-        if "weather_pv_capacity_kw" not in existing:
-            await conn.exec_driver_sql("ALTER TABLE system_settings ADD COLUMN weather_pv_capacity_kw FLOAT DEFAULT 1.0")
-        if "weather_panel_derate" not in existing:
-            await conn.exec_driver_sql("ALTER TABLE system_settings ADD COLUMN weather_panel_derate FLOAT DEFAULT 0.85")
+    if "default_run_minutes" not in cols:
+        sync_conn.exec_driver_sql(
+            "ALTER TABLE appliances ADD COLUMN default_run_minutes INTEGER NOT NULL DEFAULT 30"
+        )
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

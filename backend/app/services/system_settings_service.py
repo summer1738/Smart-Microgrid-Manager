@@ -1,4 +1,4 @@
-"""Read/write persisted system settings (SQLite)."""
+"""Read/write persisted system settings (MySQL)."""
 from __future__ import annotations
 
 from sqlalchemy import select
@@ -21,6 +21,9 @@ async def ensure_system_settings_row(session: AsyncSession) -> SystemSettings:
             weather_longitude=float(settings.weather_longitude),
             weather_pv_capacity_kw=float(settings.weather_pv_capacity_kw),
             weather_panel_derate=float(settings.weather_panel_derate),
+            inverter_capacity_kw=3.0,
+            battery_capacity_kwh=5.0,
+            soc_min_percent=40.0,
         )
         session.add(row)
         await session.flush()
@@ -55,6 +58,15 @@ async def get_weather_settings(session: AsyncSession) -> dict:
         "weather_longitude": float(row.weather_longitude),
         "weather_pv_capacity_kw": float(row.weather_pv_capacity_kw),
         "weather_panel_derate": float(row.weather_panel_derate),
+    }
+
+
+async def get_microgrid_sizing_settings(session: AsyncSession) -> dict:
+    row = await ensure_system_settings_row(session)
+    return {
+        "inverter_capacity_kw": float(row.inverter_capacity_kw),
+        "battery_capacity_kwh": float(row.battery_capacity_kwh),
+        "soc_min_percent": float(row.soc_min_percent),
     }
 
 

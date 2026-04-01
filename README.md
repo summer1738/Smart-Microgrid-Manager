@@ -19,20 +19,21 @@ Then **reopen the project** in your editor from the new path. Recreate Python ve
 python3 -m venv .venv
 source .venv/bin/activate   # or .venv\Scripts\activate on Windows
 pip install -r backend/requirements.txt
-cd backend && PYTHONPATH=.. uvicorn app.main:app --reload
+cp backend/.env.example backend/.env
+cd backend && PYTHONPATH=.. uvicorn app.main:app --reload --port 8001
 
 # 2. Web UI (separate terminal, from project root)
 cd webui && npm install && npm run dev
 ```
 
-Backend: http://localhost:8000  
-API docs: http://localhost:8000/docs  
+Backend: http://localhost:8001  
+API docs: http://localhost:8001/docs  
 Web UI: http://localhost:5173 (or port shown by Vite)
 
 By default, the backend starts a **background controller loop** (simulation mode) that:
 - applies the IEBA schedule for “now”
 - advances the simulator every `MICROGRID_SIMULATOR_INTERVAL_SECONDS` (default 60s)
-- persists readings to SQLite
+- persists readings to MySQL
 
 So `/status` **reads the latest DB state** (it does not need to “tick”).
 
@@ -40,7 +41,7 @@ So `/status` **reads the latest DB state** (it does not need to “tick”).
 - **IEBA** (`POST /schedule/run`) runs the MILP optimizer: maximizes critical/essential load uptime subject to SOC ≥ 40%, then persists the 24h schedule. `GET /schedule` returns the current schedule.
 - **Schedule executor**: Each `GET /status` applies the IEBA schedule for "now" (sets `Appliance.is_on`); the simulator then uses these states so shedded loads draw 0 W. `POST /schedule/apply` applies the schedule on demand.
 - **History** (`GET /status/history?hours=24`) returns time-series of PV, SOC, and total load for charts and export.
-- **Export** (for LSTM): `python -m ai.scripts.export_readings --hours 168 --output data/readings.csv` dumps aligned readings from `backend/microgrid.db`.
+- **Export** (for LSTM): `python -m ai.scripts.export_readings --hours 168 --output data/readings.csv` dumps aligned readings from the configured MySQL database.
 - **Web UI**: Dashboard, Forecast, Schedule, Appliances, **Training** (`/training`: run full LSTM pipeline + scheduled retrain), **Model monitor** (checkpoint status, LSTM vs simulated overlay), Weather & PV, Settings.
 
 ### Optional: install PyTorch (CPU-only)
@@ -63,6 +64,7 @@ Advanced users can still run the `python -m ai.scripts.export_readings` / `prepa
 ## Useful env vars
 
 - `MICROGRID_CONTROLLER_LOOP_ENABLED=true|false`
+- `MICROGRID_DATABASE_URL=mysql+aiomysql://root:your_password@localhost:3306/smart_microgrid`
 - `MICROGRID_SIMULATOR_INTERVAL_SECONDS=60` (set to `1` to generate data faster)
 - `MICROGRID_CONTROLLER_TICK_ON_STATUS_REQUEST=true|false` (legacy mode; tick on each `/status` call)
 - `MICROGRID_AUTO_TRAIN_ENABLED=true|false` (default false; seeds the DB on first run — enable/disable scheduled training on the **Training** page in the web UI, stored in `system_settings`)
@@ -81,6 +83,21 @@ When LSTM checkpoints are **not** used, `/forecast` and IEBA (`POST /schedule/ru
 - `MICROGRID_WEATHER_LATITUDE` / `MICROGRID_WEATHER_LONGITUDE` (default: Harare-ish `-17.8`, `31.05`)
 - `MICROGRID_WEATHER_PV_CAPACITY_KW` — nameplate kW for the forecast (default `1.0`)
 - `MICROGRID_WEATHER_PANEL_DERATE` — multiply `shortwave/1000 × capacity` (default `0.85`, inverter + mismatch)
+
+## MySQL database
+
+1. Install backend requirements:
+   - `pip install -r backend/requirements.txt`
+2. Create a MySQL database and user, for example:
+   - `CREATE DATABASE smart_microgrid;`
+   - `CREATE USER 'microgrid'@'localhost' IDENTIFIED BY 'your_password';`
+   - `GRANT ALL PRIVILEGES ON smart_microgrid.* TO 'microgrid'@'localhost';`
+3. Start the backend with:
+   - `MICROGRID_DATABASE_URL=mysql+aiomysql://microgrid:your_password@localhost:3306/smart_microgrid PYTHONPATH=.. uvicorn app.main:app --reload --port 8001`
+
+Notes:
+- Fresh MySQL installs are created with `Base.metadata.create_all()`.
+- For long-term production schema changes, adding **Alembic** would still be the next improvement.
 
 ## End-to-end commands (copy-paste)
 

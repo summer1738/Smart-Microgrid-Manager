@@ -61,9 +61,82 @@ export default function Settings({ api }) {
   const [serverLon, setServerLon] = useState('')
   const [serverPvKw, setServerPvKw] = useState('')
   const [serverDerate, setServerDerate] = useState('')
+  const [serverInverterKw, setServerInverterKw] = useState('')
+  const [serverBatteryKwh, setServerBatteryKwh] = useState('')
+  const [serverSocMin, setServerSocMin] = useState('')
+  const [serverPackagePreset, setServerPackagePreset] = useState('custom')
   const [serverLoading, setServerLoading] = useState(true)
   const [serverError, setServerError] = useState(null)
   const [serverSaving, setServerSaving] = useState(false)
+
+  const PACKAGE_PRESETS = [
+    {
+      id: 'custom',
+      label: 'Custom (manual)',
+      sizing: null,
+      weather: null,
+    },
+    // Residential presets (SolarPro Zimbabwe list)
+    {
+      id: 'res_2kva_basic',
+      label: '2kVA Basic (lights, TV, small fridge, Wi‑Fi)',
+      sizing: { inverter_capacity_kw: 2.0, battery_capacity_kwh: 2.4 },
+      weather: { weather_pv_capacity_kw: 0.6 },
+    },
+    {
+      id: 'res_3kva_advanced',
+      label: '3kVA Advanced (adds booster pump / medium fridge)',
+      sizing: { inverter_capacity_kw: 3.0, battery_capacity_kwh: 2.7 },
+      weather: { weather_pv_capacity_kw: 0.88 }, // 2 × 440W
+    },
+    {
+      id: 'res_5_6kva_standard',
+      label: '5–6kVA Standard/Premium (family home, borehole pump)',
+      sizing: { inverter_capacity_kw: 5.0, battery_capacity_kwh: 5.12 },
+      weather: { weather_pv_capacity_kw: 2.64 }, // 6 × 440W (conservative)
+    },
+    {
+      id: 'res_10kva_high_demand',
+      label: '8–10kVA High Demand (large home, AC, 1hp+ pump)',
+      sizing: { inverter_capacity_kw: 10.0, battery_capacity_kwh: 10.0 },
+      weather: { weather_pv_capacity_kw: 5.28 }, // 12 × 440W
+    },
+
+    // Commercial presets (generic defaults; edit as needed per client/site survey)
+    {
+      id: 'com_5kva_shop',
+      label: 'Commercial: 5kVA Small shop/office (POS, lights, Wi‑Fi, fridge)',
+      sizing: { inverter_capacity_kw: 5.0, battery_capacity_kwh: 5.12 },
+      weather: { weather_pv_capacity_kw: 3.3 }, // ~6 × 550W
+    },
+    {
+      id: 'com_10kva_sme',
+      label: 'Commercial: 10kVA SME (multiple fridges/freezers, printers, CCTV)',
+      sizing: { inverter_capacity_kw: 10.0, battery_capacity_kwh: 10.24 },
+      weather: { weather_pv_capacity_kw: 6.6 }, // ~12 × 550W
+    },
+    {
+      id: 'com_15kva_premium',
+      label: 'Commercial: 15kVA Premium (heavier daytime loads, workshop equipment)',
+      sizing: { inverter_capacity_kw: 15.0, battery_capacity_kwh: 15.36 },
+      weather: { weather_pv_capacity_kw: 9.9 }, // ~18 × 550W
+    },
+    {
+      id: 'com_20kva_high_demand',
+      label: 'Commercial: 20kVA High demand (large office / clinic / small lodge)',
+      sizing: { inverter_capacity_kw: 20.0, battery_capacity_kwh: 20.48 },
+      weather: { weather_pv_capacity_kw: 13.2 }, // ~24 × 550W
+    },
+  ]
+
+  const applyPreset = (presetId) => {
+    setServerPackagePreset(presetId)
+    const p = PACKAGE_PRESETS.find((x) => x.id === presetId)
+    if (!p || !p.sizing) return
+    if (p.sizing.inverter_capacity_kw != null) setServerInverterKw(String(p.sizing.inverter_capacity_kw))
+    if (p.sizing.battery_capacity_kwh != null) setServerBatteryKwh(String(p.sizing.battery_capacity_kwh))
+    if (p.weather?.weather_pv_capacity_kw != null) setServerPvKw(String(p.weather.weather_pv_capacity_kw))
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -82,6 +155,10 @@ export default function Settings({ api }) {
         setServerLon(String(d.weather_longitude ?? ''))
         setServerPvKw(String(d.weather_pv_capacity_kw ?? ''))
         setServerDerate(String(d.weather_panel_derate ?? ''))
+        setServerInverterKw(String(d.inverter_capacity_kw ?? ''))
+        setServerBatteryKwh(String(d.battery_capacity_kwh ?? ''))
+        setServerSocMin(String(d.soc_min_percent ?? ''))
+        setServerPackagePreset('custom')
       })
       .catch((e) => {
         if (!cancelled) setServerError(e.message || 'Failed to load server settings')
@@ -124,6 +201,9 @@ export default function Settings({ api }) {
         weather_longitude: Number(serverLon),
         weather_pv_capacity_kw: Number(serverPvKw),
         weather_panel_derate: Number(serverDerate),
+        inverter_capacity_kw: Number(serverInverterKw),
+        battery_capacity_kwh: Number(serverBatteryKwh),
+        soc_min_percent: Number(serverSocMin),
       }
       const r = await fetch(`${api}/system/settings`, {
         method: 'PUT',
@@ -138,6 +218,9 @@ export default function Settings({ api }) {
       setServerLon(String(d.weather_longitude ?? ''))
       setServerPvKw(String(d.weather_pv_capacity_kw ?? ''))
       setServerDerate(String(d.weather_panel_derate ?? ''))
+      setServerInverterKw(String(d.inverter_capacity_kw ?? ''))
+      setServerBatteryKwh(String(d.battery_capacity_kwh ?? ''))
+      setServerSocMin(String(d.soc_min_percent ?? ''))
     } catch (e) {
       setServerError(e.message || 'Save failed')
     } finally {
@@ -198,9 +281,75 @@ export default function Settings({ api }) {
           maxWidth: 560,
         }}
       >
+        <h2 style={{ fontSize: '1rem', marginTop: 0, marginBottom: '0.75rem' }}>Microgrid system sizing</h2>
+        <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginTop: 0 }}>
+          Used by IEBA to respect inverter limits and battery SOC constraints. Default inverter capacity is 3 kW.
+        </p>
+        <div style={{ marginTop: 10 }}>
+          <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: 6 }}>Residential package preset</div>
+          <select
+            value={serverPackagePreset}
+            onChange={(e) => applyPreset(e.target.value)}
+            disabled={serverLoading || serverSaving}
+            style={{
+              width: '100%',
+              padding: '0.55rem',
+              borderRadius: 8,
+              border: '1px solid #334155',
+              background: '#0f172a',
+              color: '#e2e8f0',
+            }}
+          >
+            {PACKAGE_PRESETS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+          <div style={{ color: '#64748b', fontSize: '0.8rem', marginTop: 6, lineHeight: 1.35 }}>
+            Choosing a preset auto-fills inverter kW, battery kWh, and PV nameplate kW (still editable below).
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+          <Field
+            label="Inverter capacity (kW)"
+            value={serverInverterKw}
+            onChange={setServerInverterKw}
+            placeholder="5.0"
+            disabled={serverLoading || serverSaving}
+          />
+          <Field
+            label="Battery capacity (kWh)"
+            value={serverBatteryKwh}
+            onChange={setServerBatteryKwh}
+            placeholder="5.0"
+            disabled={serverLoading || serverSaving}
+          />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+          <Field
+            label="Minimum SOC (%)"
+            value={serverSocMin}
+            onChange={setServerSocMin}
+            placeholder="40"
+            disabled={serverLoading || serverSaving}
+          />
+          <div />
+        </div>
+      </section>
+
+      <section
+        style={{
+          marginTop: '1.5rem',
+          background: '#1e293b',
+          padding: '1rem 1.25rem',
+          borderRadius: 8,
+          maxWidth: 560,
+        }}
+      >
         <h2 style={{ fontSize: '1rem', marginTop: 0, marginBottom: '0.75rem' }}>System location (weather)</h2>
         <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginTop: 0 }}>
-          Used by Weather &amp; PV and expected PV forecasts. These are saved in SQLite (system settings).
+          Used by Weather &amp; PV and expected PV forecasts. These are saved in MySQL (`system_settings`).
         </p>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
@@ -235,7 +384,7 @@ export default function Settings({ api }) {
               cursor: serverLoading || serverSaving ? 'not-allowed' : 'pointer',
             }}
           >
-            {serverSaving ? 'Saving…' : 'Save weather settings'}
+            {serverSaving ? 'Saving…' : 'Save server settings'}
           </button>
         </div>
       </section>

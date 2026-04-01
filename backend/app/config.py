@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     """Backend settings."""
 
     use_hardware_simulation: bool = True
-    database_url: str = "sqlite+aiosqlite:///./microgrid.db"
+    database_url: str = "mysql+aiomysql://root:Virus1738%25@localhost:3306/smart_microgrid"
     simulator_interval_seconds: int = 60
     controller_loop_enabled: bool = True
     controller_tick_on_status_request: bool = False
@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     weather_pv_capacity_kw: float = 1.0
     # Multiply (shortwave_W/m² / 1000) * capacity; accounts for inverter + mismatch (~0.85 typical).
     weather_panel_derate: float = 0.85
+    # Logging
+    log_level: str = "INFO"  # DEBUG/INFO/WARNING/ERROR
+    log_access: bool = True  # log request method/path/status/duration
+    log_color: bool = True  # colorize logs when supported (TTY)
 
     class Config:
         env_prefix = "MICROGRID_"

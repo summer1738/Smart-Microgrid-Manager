@@ -63,6 +63,7 @@ def run_ieba(
     soc_min_percent: float = 40.0,
     time_resolution_hours: float = 1.0,
     base_ts: Optional[datetime] = None,
+    inverter_capacity_kw: Optional[float] = None,
 ) -> List[Dict[str, Any]]:
     """
     Solve MILP: max sum_t sum_a weight_a * x[a,t] s.t. SOC dynamics and SOC >= soc_min.
@@ -142,6 +143,10 @@ def run_ieba(
         pv_t = forecast_generation_kw[t]
         load_t = lpSum(P[i] * x[i, t] for i in range(n))
         prob += soc[t + 1] == soc[t] + (pv_t * c) - load_t * c
+
+        # Inverter power limit (if configured): total appliance draw must not exceed inverter capacity.
+        if inverter_capacity_kw is not None and float(inverter_capacity_kw) > 0:
+            prob += load_t <= float(inverter_capacity_kw)
 
     # Hard preference: forbid running outside preferred windows (if configured)
     for i in range(n):

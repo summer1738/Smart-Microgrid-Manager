@@ -11,6 +11,8 @@ class ApplianceCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     priority: int = Field(1, ge=1, le=3)
     rated_watts: float = Field(..., gt=0)
+    usage_mode: str = Field("scheduled", pattern="^(scheduled|on_demand)$")
+    default_run_minutes: int = Field(30, ge=5, le=240)
     schedule_prefs: Optional[str] = None
     relay_topic: Optional[str] = None
 
@@ -19,6 +21,8 @@ class ApplianceUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     priority: Optional[int] = Field(None, ge=1, le=3)
     rated_watts: Optional[float] = Field(None, gt=0)
+    usage_mode: Optional[str] = Field(None, pattern="^(scheduled|on_demand)$")
+    default_run_minutes: Optional[int] = Field(None, ge=5, le=240)
     schedule_prefs: Optional[str] = None
     relay_topic: Optional[str] = None
     is_on: Optional[bool] = None
@@ -30,6 +34,8 @@ class ApplianceOut(BaseModel):
     name: str
     priority: int
     rated_watts: float
+    usage_mode: str = "scheduled"
+    default_run_minutes: int = 30
     schedule_prefs: Optional[str] = None
     relay_topic: Optional[str] = None
     is_on: bool
@@ -57,6 +63,7 @@ class LoadSnapshot(BaseModel):
     name: str
     power_kw: float
     state: str
+    unexpected_override: bool = False
 
 
 class StatusOut(BaseModel):
@@ -65,6 +72,12 @@ class StatusOut(BaseModel):
     battery: BatterySnapshot
     loads: List[LoadSnapshot]
     total_load_kw: float
+    available_export_kw: float = 0.0
+    battery_is_charging: bool = False
+    battery_status_label: str = "Unknown"
+    battery_status_level: str = "neutral"
+    manual_override_detected: bool = False
+    manual_override_messages: List[str] = []
     simulated: bool = True
 
 
@@ -97,11 +110,28 @@ class ScheduleOut(BaseModel):
     message: Optional[str] = "IEBA schedule not yet implemented."
 
 
+class ApplianceRunRequest(BaseModel):
+    duration_minutes: int = Field(30, ge=5, le=240)
+
+
+class ApplianceRunDecisionOut(BaseModel):
+    ok: bool
+    appliance_id: int
+    appliance_name: str
+    decision: str
+    message: str
+    duration_minutes: int
+    recommended_start_ts: Optional[datetime] = None
+    scheduled_start_ts: Optional[datetime] = None
+    scheduled_end_ts: Optional[datetime] = None
+
+
 class HistoryPoint(BaseModel):
     timestamp: datetime
     power_kw: Optional[float] = None
     soc_percent: Optional[float] = None
     total_load_kw: Optional[float] = None
+    available_export_kw: Optional[float] = None
 
 
 class StatusHistoryOut(BaseModel):

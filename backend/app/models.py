@@ -29,6 +29,8 @@ class Appliance(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     priority: Mapped[int] = mapped_column(Integer, default=2)  # 1=critical, 2=essential, 3=non-essential
     rated_watts: Mapped[float] = mapped_column(Float, nullable=False)
+    usage_mode: Mapped[str] = mapped_column(String(20), default="scheduled")  # scheduled / on_demand
+    default_run_minutes: Mapped[int] = mapped_column(Integer, default=30)
     schedule_prefs: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: preferred windows
     relay_topic: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     is_on: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -89,3 +91,8 @@ class SystemSettings(Base):
     weather_longitude: Mapped[float] = mapped_column(Float, default=31.05)
     weather_pv_capacity_kw: Mapped[float] = mapped_column(Float, default=1.0)
     weather_panel_derate: Mapped[float] = mapped_column(Float, default=0.85)
+
+    # Microgrid sizing for IEBA / scheduling (defaults should suit typical deployments).
+    inverter_capacity_kw: Mapped[float] = mapped_column(Float, default=3.0)  # default 3 kW system
+    battery_capacity_kwh: Mapped[float] = mapped_column(Float, default=5.0)
+    soc_min_percent: Mapped[float] = mapped_column(Float, default=40.0)

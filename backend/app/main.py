@@ -5,10 +5,19 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 
 from app.api import appliances, forecast, health, schedule, status, system_settings
 from app.config import settings
 from app.database import init_db
+from app.logging_config import setup_logging
+
+import logging
+import time
+
+log = logging.getLogger("app")
 
 
 async def seed_default_user():
@@ -32,9 +41,18 @@ async def seed_system_settings():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging(settings.log_level, color=settings.log_color)
+    log.info(
+        "Starting backend (mode=%s, db=%s)",
+        "simulation" if settings.use_hardware_simulation else "hardware_ingest",
+        settings.database_url,
+    )
     await init_db()
+    log.info("Database initialized")
     await seed_default_user()
+    log.info("Default user/appliances ensured")
     await seed_system_settings()
+    log.info("System settings ensured")
     controller = None
     auto_trainer = None
     mqtt_ingest = None
@@ -42,23 +60,30 @@ async def lifespan(app: FastAPI):
         from app.services.controller_loop import ControllerLoop
         controller = ControllerLoop()
         await controller.start()
+        log.info("Controller loop started")
     if not settings.use_hardware_simulation:
         from app.services.mqtt_ingest_service import MqttIngestLoop
         mqtt_ingest = MqttIngestLoop()
         await mqtt_ingest.start()
+        log.info("MQTT ingest loop started (host=%s port=%s prefix=%s)", settings.mqtt_host, settings.mqtt_port, settings.mqtt_topic_prefix)
     from app.services.auto_train_service import AutoTrainLoop, set_global_auto_trainer
     auto_trainer = AutoTrainLoop()
     set_global_auto_trainer(auto_trainer)
     await auto_trainer.start()
+    log.info("Auto-train loop started")
     yield
+    log.info("Shutting down backend")
     if controller is not None:
         await controller.stop()
+        log.info("Controller loop stopped")
     if auto_trainer is not None:
         await auto_trainer.stop()
         from app.services.auto_train_service import set_global_auto_trainer
         set_global_auto_trainer(None)
+        log.info("Auto-train loop stopped")
     if mqtt_ingest is not None:
         await mqtt_ingest.stop()
+        log.info("MQTT ingest loop stopped")
 
 
 app = FastAPI(
@@ -67,6 +92,26 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+class AccessLogMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next) -> Response:
+        if not settings.log_access:
+            return await call_next(request)
+        t0 = time.perf_counter()
+        response = await call_next(request)
+        dt_ms = (time.perf_counter() - t0) * 1000.0
+        log.info(
+            'http %s %s -> %s (%.1fms)',
+            request.method,
+            request.url.path,
+            response.status_code,
+            dt_ms,
+        )
+        return response
+
+
+app.add_middleware(AccessLogMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
