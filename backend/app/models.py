@@ -68,6 +68,20 @@ class LoadReading(Base):
     state: Mapped[str] = mapped_column(String(20), default="on")  # on / off / shedded
 
 
+class EnvironmentReading(Base):
+    """ESP32 MQTT …/sensors/environment (DHT11 + digital light)."""
+
+    __tablename__ = "environment_readings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    temperature_c: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    humidity_percent: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    light_digital: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    # JSON object: wifi_rssi_dbm, free_heap_bytes, uptime_ms, dht_ok, pins{...}
+    esp32_diagnostics_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+
 class ScheduleSlot(Base):
     __tablename__ = "schedule_slots"
 

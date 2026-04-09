@@ -66,6 +66,18 @@ class LoadSnapshot(BaseModel):
     unexpected_override: bool = False
 
 
+class Esp32GatewaySnapshot(BaseModel):
+    """On-device telemetry from ESP32 gateway (MQTT …/sensors/environment)."""
+
+    wifi_rssi_dbm: Optional[int] = None
+    free_heap_bytes: Optional[int] = None
+    uptime_ms: Optional[int] = None
+    dht_ok: Optional[bool] = None
+    light_ok: Optional[bool] = None
+    pins: Optional[dict[str, int]] = None
+    updated_at: Optional[datetime] = None
+
+
 class StatusOut(BaseModel):
     timestamp: datetime
     pv: PvSnapshot
@@ -79,6 +91,13 @@ class StatusOut(BaseModel):
     manual_override_detected: bool = False
     manual_override_messages: List[str] = []
     simulated: bool = True
+    # From MQTT topic .../sensors/environment (ESP32 DHT11 + digital light DO)
+    ambient_temperature_c: Optional[float] = None
+    ambient_humidity_percent: Optional[float] = None
+    ambient_light_digital: Optional[bool] = None
+    ambient_sensors_updated_at: Optional[datetime] = None
+    # ESP32 board: WiFi, heap, uptime, DHT health, GPIO map (hardware / MQTT mode only)
+    esp32_gateway: Optional[Esp32GatewaySnapshot] = None
 
 
 class ForecastSeries(BaseModel):
@@ -134,9 +153,17 @@ class HistoryPoint(BaseModel):
     available_export_kw: Optional[float] = None
 
 
+class AmbientHistoryPoint(BaseModel):
+    timestamp: datetime
+    temperature_c: Optional[float] = None
+    humidity_percent: Optional[float] = None
+    light_digital: Optional[bool] = None
+
+
 class StatusHistoryOut(BaseModel):
-    """Time-series of PV, battery SOC, and total load for charts and LSTM export."""
+    """Time-series of PV, battery SOC, total load, and optional ambient (ESP32) samples."""
     points: List[HistoryPoint]
+    ambient_points: List[AmbientHistoryPoint] = Field(default_factory=list)
     hours: int
 
 

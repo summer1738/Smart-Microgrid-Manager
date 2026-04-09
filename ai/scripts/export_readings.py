@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
-Export PV, battery, and load readings from the MySQL database to CSV for LSTM training.
+Export PV, battery, load, and ambient (ESP32) readings from the MySQL database to CSV for LSTM training.
+Ambient columns use the latest environment sample at or before each battery timestamp (as-of join).
+
 Usage (from project root):
   python -m ai.scripts.export_readings --database-url mysql+aiomysql://... [--hours 168] [--output data/readings.csv]
 """
 import argparse
-import csv
 import os
 import sys
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
+import pandas as pd
 from sqlalchemy import create_engine, text
 
 
@@ -60,15 +63,50 @@ def export(hours: int = 168, output_path: Optional[str] = None, database_url: Op
     if not rows:
         print("No readings in range.", file=sys.stderr)
         return
+
+    df_b = pd.DataFrame(rows)
+    df_b["timestamp"] = pd.to_datetime(df_b["timestamp"], utc=True)
+
+    q_env = text(
+        f"""
+        SELECT timestamp, temperature_c, humidity_percent, light_digital
+        FROM environment_readings
+        WHERE timestamp >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL {interval} HOUR)
+        ORDER BY timestamp
+        """
+    )
+    with engine.connect() as conn:
+        env_rows = conn.execute(q_env).mappings().all()
+
+    if env_rows:
+        df_e = pd.DataFrame(env_rows)
+        df_e["timestamp"] = pd.to_datetime(df_e["timestamp"], utc=True)
+        df_e["light_digital"] = df_e["light_digital"].map(
+            lambda x: 1.0 if x is True else (0.0 if x is False else np.nan)
+        )
+        df_e = df_e.sort_values("timestamp")
+        df_b = df_b.sort_values("timestamp")
+        df = pd.merge_asof(df_b, df_e, on="timestamp", direction="backward")
+    else:
+        df = df_b.sort_values("timestamp")
+        df["temperature_c"] = np.nan
+        df["humidity_percent"] = np.nan
+        df["light_digital"] = np.nan
+
     out = output_path or "readings.csv"
     out_path = Path(out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(out_path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["timestamp", "pv_kw", "soc_percent", "total_load_kw"])
-        for r in rows:
-            w.writerow([r["timestamp"], r["pv_kw"], r["soc_percent"], r["total_load_kw"]])
-    print(f"Exported {len(rows)} rows to {out_path}")
+    cols = [
+        "timestamp",
+        "pv_kw",
+        "soc_percent",
+        "total_load_kw",
+        "temperature_c",
+        "humidity_percent",
+        "light_digital",
+    ]
+    df.to_csv(out_path, index=False, columns=cols)
+    print(f"Exported {len(df)} rows to {out_path}")
 
 
 def main() -> None:

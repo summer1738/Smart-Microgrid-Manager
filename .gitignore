@@ -20,6 +20,7 @@ webui/dist/
 
 # Environment and secrets
 .env
+firmware/**/secrets.h
 .env.local
 .env.*.local
 

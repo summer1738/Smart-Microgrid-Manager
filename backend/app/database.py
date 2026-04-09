@@ -37,6 +37,13 @@ def _run_lightweight_migrations(sync_conn) -> None:
             "ALTER TABLE appliances ADD COLUMN default_run_minutes INTEGER NOT NULL DEFAULT 30"
         )
 
+    if "environment_readings" in insp.get_table_names():
+        env_cols = {c["name"] for c in insp.get_columns("environment_readings")}
+        if "esp32_diagnostics_json" not in env_cols:
+            sync_conn.exec_driver_sql(
+                "ALTER TABLE environment_readings ADD COLUMN esp32_diagnostics_json TEXT NULL"
+            )
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:

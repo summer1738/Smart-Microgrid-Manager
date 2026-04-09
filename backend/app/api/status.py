@@ -7,8 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.models import Appliance, BatteryReading, LoadReading, PvReading
-from app.schemas import BatterySnapshot, HistoryPoint, LoadSnapshot, PvSnapshot, StatusHistoryOut, StatusOut
+from app.models import Appliance, BatteryReading, EnvironmentReading, LoadReading, PvReading
+from app.schemas import (
+    AmbientHistoryPoint,
+    BatterySnapshot,
+    Esp32GatewaySnapshot,
+    HistoryPoint,
+    LoadSnapshot,
+    PvSnapshot,
+    StatusHistoryOut,
+    StatusOut,
+)
+from app.services.mqtt_ingest_service import get_ambient_state
 from app.services.schedule_executor_service import apply_schedule
 from app.services.simulator_service import tick_simulator_and_persist
 
@@ -51,6 +61,24 @@ def _battery_status(pv_kw: float, total_load_kw: float, soc_percent: float, batt
     if pv <= load:
         return False, "Warning: battery is not charging because all PV is being used by the load.", "warning"
     return False, "Warning: battery is not charging.", "warning"
+
+
+def _ambient_status_fields() -> dict:
+    s = get_ambient_state()
+    eg_raw = s.get("esp32_gateway")
+    esp32_model: Esp32GatewaySnapshot | None = None
+    if eg_raw:
+        try:
+            esp32_model = Esp32GatewaySnapshot.model_validate(eg_raw)
+        except Exception:
+            esp32_model = None
+    return {
+        "ambient_temperature_c": s.get("temperature_c"),
+        "ambient_humidity_percent": s.get("humidity_percent"),
+        "ambient_light_digital": s.get("light_digital"),
+        "ambient_sensors_updated_at": s.get("updated_at"),
+        "esp32_gateway": esp32_model,
+    }
 
 
 def _manual_override_flag(expected_on: bool, measured_power_kw: float, measured_state: str) -> bool:
@@ -126,6 +154,7 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> StatusOut:
                 manual_override_detected=bool(manual_override_messages),
                 manual_override_messages=manual_override_messages,
                 simulated=True,
+                **_ambient_status_fields(),
             )
 
         # Controller loop mode: read latest from DB (same as hardware path)
@@ -191,6 +220,7 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> StatusOut:
             manual_override_detected=bool(manual_override_messages),
             manual_override_messages=manual_override_messages,
             simulated=True,
+            **_ambient_status_fields(),
         )
 
     # Real hardware: read latest from DB
@@ -257,6 +287,7 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> StatusOut:
         manual_override_detected=bool(manual_override_messages),
         manual_override_messages=manual_override_messages,
         simulated=False,
+        **_ambient_status_fields(),
     )
 
 
@@ -271,6 +302,25 @@ async def get_status_history(
     """
     now = datetime.now(timezone.utc)
     since = now - timedelta(hours=hours)
+    env_hist = await db.execute(
+        select(
+            EnvironmentReading.timestamp,
+            EnvironmentReading.temperature_c,
+            EnvironmentReading.humidity_percent,
+            EnvironmentReading.light_digital,
+        )
+        .where(EnvironmentReading.timestamp >= since)
+        .order_by(EnvironmentReading.timestamp)
+    )
+    ambient_points = [
+        AmbientHistoryPoint(
+            timestamp=r[0],
+            temperature_c=r[1],
+            humidity_percent=r[2],
+            light_digital=r[3],
+        )
+        for r in env_hist.all()
+    ]
     # Get battery readings (one per tick) and join PV + load for same timestamp
     bat = await db.execute(
         select(BatteryReading.timestamp, BatteryReading.soc_percent)
@@ -279,7 +329,7 @@ async def get_status_history(
     )
     battery_rows = bat.all()
     if not battery_rows:
-        return StatusHistoryOut(points=[], hours=hours)
+        return StatusHistoryOut(points=[], ambient_points=ambient_points, hours=hours)
     timestamps = [r[0] for r in battery_rows]
     soc_by_ts = {r[0]: r[1] for r in battery_rows}
     pv_by_ts = {}
@@ -310,4 +360,4 @@ async def get_status_history(
         )
         for ts in timestamps
     ]
-    return StatusHistoryOut(points=points, hours=hours)
+    return StatusHistoryOut(points=points, ambient_points=ambient_points, hours=hours)

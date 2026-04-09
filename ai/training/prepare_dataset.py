@@ -4,6 +4,8 @@ Prepare a supervised sequence dataset from exported readings.csv.
 
 Input CSV columns:
   timestamp, pv_kw, soc_percent, total_load_kw
+  Optional (from export_readings with ESP32 ambient data): temperature_c, humidity_percent, light_digital (0/1).
+  Missing ambient columns are treated as zeros.
 
 Output:
   .npz file with arrays suitable for LSTM training:
@@ -48,16 +50,29 @@ def build_sequence_dataset(
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
     df = df.dropna(subset=["timestamp"]).sort_values("timestamp")
 
-    # Basic numeric cleaning
-    for c in ["pv_kw", "soc_percent", "total_load_kw"]:
-        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+    base_cols = ["pv_kw", "soc_percent", "total_load_kw"]
+    env_cols = ["temperature_c", "humidity_percent", "light_digital"]
+    for c in base_cols + env_cols:
+        if c not in df.columns:
+            df[c] = 0.0
+        else:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
 
     sin_h, cos_h = _time_features(df["timestamp"])
     df["sin_hour"] = sin_h
     df["cos_hour"] = cos_h
 
-    # Features available from simulation/hardware
-    feature_names = ["pv_kw", "soc_percent", "total_load_kw", "sin_hour", "cos_hour"]
+    # Features: PV/SOC/load + optional ambient + time encodings
+    feature_names = [
+        "pv_kw",
+        "soc_percent",
+        "total_load_kw",
+        "temperature_c",
+        "humidity_percent",
+        "light_digital",
+        "sin_hour",
+        "cos_hour",
+    ]
     features = df[feature_names].to_numpy(dtype=np.float32)
     target = df[target_col].to_numpy(dtype=np.float32)
 

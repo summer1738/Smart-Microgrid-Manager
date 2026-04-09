@@ -8,6 +8,7 @@ import ModelMonitor from './pages/ModelMonitor'
 import Settings from './pages/Settings'
 import Training from './pages/Training'
 import Weather from './pages/Weather'
+import HardwareMonitor from './pages/HardwareMonitor'
 import MqttNavIndicator from './components/MqttNavIndicator'
 
 const API = '/api'
@@ -29,6 +30,7 @@ function Nav() {
       </Link>
       <Link to="/">Dashboard</Link>
       <Link to="/appliances">Appliances</Link>
+      <Link to="/hardware">Hardware</Link>
       <Link to="/forecast">Forecast</Link>
       <Link to="/weather">Weather &amp; PV</Link>
       <Link to="/schedule">Schedule</Link>
@@ -50,6 +52,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard api={API} />} />
             <Route path="/appliances" element={<Appliances api={API} />} />
+            <Route path="/hardware" element={<HardwareMonitor api={API} />} />
             <Route path="/forecast" element={<Forecast api={API} />} />
             <Route path="/weather" element={<Weather api={API} />} />
             <Route path="/schedule" element={<Schedule api={API} />} />

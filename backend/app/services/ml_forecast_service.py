@@ -15,6 +15,10 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 import numpy as np
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import BatteryReading, EnvironmentReading, LoadReading, PvReading
 
 
 @dataclass
@@ -102,6 +106,170 @@ def _make_time_features(ts: datetime) -> Tuple[float, float]:
     return float(np.sin(angle)), float(np.cos(angle))
 
 
+def _ensure_utc(ts: datetime) -> datetime:
+    if getattr(ts, "tzinfo", None) is None:
+        return ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(timezone.utc)
+
+
+def _merge_asof_env_backward(
+    timestamps: List[datetime],
+    env_rows: List[Tuple[datetime, Optional[float], Optional[float], Optional[bool]]],
+) -> List[Tuple[Optional[float], Optional[float], Optional[bool]]]:
+    """For each timestamp, use the latest environment row with row_ts <= timestamp."""
+    out: List[Tuple[Optional[float], Optional[float], Optional[bool]]] = []
+    j = 0
+    best: Tuple[Optional[float], Optional[float], Optional[bool]] = (None, None, None)
+    for t in timestamps:
+        while j < len(env_rows) and env_rows[j][0] <= t:
+            _ts, te, hu, li = env_rows[j]
+            best = (te, hu, li)
+            j += 1
+        out.append(best)
+    return out
+
+
+async def fetch_lstm_seed_rows(db: AsyncSession, base_ts: datetime, need: int) -> List[dict]:
+    """
+    Recent aligned PV/SOC/load + as-of ambient, chronological, at most `need` rows ending at or before base_ts.
+    """
+    if need <= 0:
+        return []
+    base_ts = _ensure_utc(base_ts)
+    since = base_ts - timedelta(days=14)
+    bat = await db.execute(
+        select(BatteryReading.timestamp, BatteryReading.soc_percent)
+        .where(BatteryReading.timestamp >= since, BatteryReading.timestamp <= base_ts)
+        .order_by(BatteryReading.timestamp)
+    )
+    battery_rows = bat.all()
+    if not battery_rows:
+        return []
+    timestamps = [r[0] for r in battery_rows]
+    soc_by_ts = {r[0]: r[1] for r in battery_rows}
+    pv_by_ts: dict = {}
+    pv_readings = await db.execute(
+        select(PvReading.timestamp, PvReading.power_kw).where(
+            PvReading.timestamp >= since,
+            PvReading.timestamp <= base_ts,
+        )
+    )
+    for ts, kw in pv_readings.all():
+        pv_by_ts[ts] = kw
+    load_by_ts: dict = {}
+    load_agg = await db.execute(
+        select(LoadReading.timestamp, func.sum(LoadReading.power_kw))
+        .where(
+            LoadReading.timestamp >= since,
+            LoadReading.timestamp <= base_ts,
+        )
+        .group_by(LoadReading.timestamp)
+    )
+    for ts, kw in load_agg.all():
+        load_by_ts[ts] = float(kw) if kw is not None else 0.0
+    env_raw = await db.execute(
+        select(
+            EnvironmentReading.timestamp,
+            EnvironmentReading.temperature_c,
+            EnvironmentReading.humidity_percent,
+            EnvironmentReading.light_digital,
+        )
+        .where(
+            EnvironmentReading.timestamp >= since,
+            EnvironmentReading.timestamp <= base_ts,
+        )
+        .order_by(EnvironmentReading.timestamp)
+    )
+    env_list: List[Tuple[datetime, Optional[float], Optional[float], Optional[bool]]] = [
+        (r[0], r[1], r[2], r[3]) for r in env_raw.all()
+    ]
+    merged_env = _merge_asof_env_backward(timestamps, env_list)
+    rows: List[dict] = []
+    for i, ts in enumerate(timestamps):
+        te, hu, li = merged_env[i]
+        ld = 1.0 if li is True else (0.0 if li is False else 0.0)
+        rows.append(
+            {
+                "timestamp": ts,
+                "pv_kw": float(pv_by_ts.get(ts) or 0.0),
+                "soc_percent": float(soc_by_ts.get(ts) or 0.0),
+                "total_load_kw": float(load_by_ts.get(ts) or 0.0),
+                "temperature_c": float(te) if te is not None else 0.0,
+                "humidity_percent": float(hu) if hu is not None else 0.0,
+                "light_digital": ld,
+            }
+        )
+    if len(rows) > need:
+        rows = rows[-need:]
+    return rows
+
+
+def _fill_row_features(row: dict, ckpt: TorchLSTMCheckpoint, out: np.ndarray, row_idx: int) -> None:
+    ts = _ensure_utc(row["timestamp"])
+    sin_h, cos_h = _make_time_features(ts)
+    for j, name in enumerate(ckpt.feature_names):
+        if name == "pv_kw":
+            out[row_idx, j] = float(row.get("pv_kw") or 0.0)
+        elif name == "soc_percent":
+            out[row_idx, j] = float(row.get("soc_percent") or 0.0)
+        elif name == "total_load_kw":
+            out[row_idx, j] = float(row.get("total_load_kw") or 0.0)
+        elif name == "temperature_c":
+            out[row_idx, j] = float(row.get("temperature_c") or 0.0)
+        elif name == "humidity_percent":
+            out[row_idx, j] = float(row.get("humidity_percent") or 0.0)
+        elif name == "light_digital":
+            out[row_idx, j] = float(row.get("light_digital") or 0.0)
+        elif name == "sin_hour":
+            out[row_idx, j] = sin_h
+        elif name == "cos_hour":
+            out[row_idx, j] = cos_h
+        else:
+            out[row_idx, j] = 0.0
+
+
+def _seed_window_from_rows(rows: List[dict], ckpt: TorchLSTMCheckpoint) -> Optional[np.ndarray]:
+    if not rows:
+        return None
+    seq_len = ckpt.seq_len
+    if len(rows) >= seq_len:
+        chunk = rows[-seq_len:]
+    else:
+        pad = seq_len - len(rows)
+        chunk = [rows[0]] * pad + list(rows)
+    X = np.zeros((seq_len, ckpt.feat_dim), dtype=np.float32)
+    for t, row in enumerate(chunk):
+        _fill_row_features(row, ckpt, X, t)
+    return X
+
+
+def _synthetic_seed_window(
+    ckpt: TorchLSTMCheckpoint,
+    base_ts: datetime,
+    resolution_hours: float,
+    initial_pv: float = 0.2,
+    initial_soc: float = 70.0,
+    initial_load: float = 0.2,
+) -> np.ndarray:
+    base_ts = _ensure_utc(base_ts)
+    X = np.zeros((ckpt.seq_len, ckpt.feat_dim), dtype=np.float32)
+    for t in range(ckpt.seq_len):
+        ts = base_ts - timedelta(hours=(ckpt.seq_len - t) * resolution_hours)
+        ts = _ensure_utc(ts)
+        sin_h, cos_h = _make_time_features(ts)
+        row = {
+            "timestamp": ts,
+            "pv_kw": initial_pv,
+            "soc_percent": initial_soc,
+            "total_load_kw": initial_load,
+            "temperature_c": 0.0,
+            "humidity_percent": 0.0,
+            "light_digital": 0.0,
+        }
+        _fill_row_features(row, ckpt, X, t)
+    return X
+
+
 def _standardize(x: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.ndarray:
     return (x - mean) / (std + 1e-8)
 
@@ -179,18 +347,21 @@ def autoregressive_forecast(
     return ts_list, y_list
 
 
-def try_model_forecast(
+async def try_model_forecast(
     horizon_hours: int = 24,
     resolution_hours: float = 1.0,
     base_ts: Optional[datetime] = None,
     load_model_path: Optional[str] = None,
     gen_model_path: Optional[str] = None,
-) -> Optional[Tuple[List[str], List[float], List[float], str]]:
+    db: Optional[AsyncSession] = None,
+) -> Optional[Tuple[List[str], List[float], List[float], str, bool]]:
     """
-    If models exist, return (timestamps, gen_kw, load_kw, message). Otherwise None.
-    Seed window is currently synthetic; once you have real history, we will seed from DB.
+    If models exist, return (timestamps, gen_kw, load_kw, message, seed_from_db).
+    When `db` is set, LSTM seeds use recent DB readings (aligned PV/SOC/load + as-of ambient).
+    Otherwise seeds are synthetic constants.
     """
     base_ts = base_ts or datetime.now(timezone.utc)
+    base_ts = _ensure_utc(base_ts)
     steps = max(1, int(horizon_hours / resolution_hours))
 
     model_dir = _default_model_dir()
@@ -202,27 +373,25 @@ def try_model_forecast(
     if gen_ckpt is None or load_ckpt is None:
         return None
 
-    # Synthetic seed window (will be replaced with DB-derived window)
-    def seed_window(ckpt: TorchLSTMCheckpoint, initial_pv: float, initial_soc: float, initial_load: float) -> np.ndarray:
-        X = np.zeros((ckpt.seq_len, ckpt.feat_dim), dtype=np.float32)
-        for t in range(ckpt.seq_len):
-            ts = base_ts - timedelta(hours=(ckpt.seq_len - t) * resolution_hours)
-            sin_h, cos_h = _make_time_features(ts)
-            for j, name in enumerate(ckpt.feature_names):
-                if name == "pv_kw":
-                    X[t, j] = initial_pv
-                elif name == "soc_percent":
-                    X[t, j] = initial_soc
-                elif name == "total_load_kw":
-                    X[t, j] = initial_load
-                elif name == "sin_hour":
-                    X[t, j] = sin_h
-                elif name == "cos_hour":
-                    X[t, j] = cos_h
-        return X
+    need = max(gen_ckpt.seq_len, load_ckpt.seq_len)
+    seed_rows: List[dict] = []
+    if db is not None:
+        try:
+            seed_rows = await fetch_lstm_seed_rows(db, base_ts, need)
+        except Exception:
+            seed_rows = []
 
-    gen_seed = seed_window(gen_ckpt, initial_pv=0.2, initial_soc=70.0, initial_load=0.2)
-    load_seed = seed_window(load_ckpt, initial_pv=0.2, initial_soc=70.0, initial_load=0.2)
+    seed_from_db = bool(seed_rows)
+
+    def seed_for(ckpt: TorchLSTMCheckpoint) -> np.ndarray:
+        if seed_rows:
+            w = _seed_window_from_rows(seed_rows, ckpt)
+            if w is not None:
+                return w
+        return _synthetic_seed_window(ckpt, base_ts, resolution_hours)
+
+    gen_seed = seed_for(gen_ckpt)
+    load_seed = seed_for(load_ckpt)
 
     ts_gen, gen_vals = autoregressive_forecast(gen_ckpt, gen_seed, base_ts, steps, step_hours=resolution_hours)
     ts_load, load_vals = autoregressive_forecast(load_ckpt, load_seed, base_ts, steps, step_hours=resolution_hours)
@@ -233,7 +402,9 @@ def try_model_forecast(
         return None
 
     msg = f"Model forecast loaded (gen: {gen_ckpt.path.name}, load: {load_ckpt.path.name})."
-    return ts, gen_vals[: len(ts)], load_vals[: len(ts)], msg
+    if seed_from_db:
+        msg += " LSTM seed from recent DB readings."
+    return ts, gen_vals[: len(ts)], load_vals[: len(ts)], msg, seed_from_db
 
 
 def inspect_forecast_models(

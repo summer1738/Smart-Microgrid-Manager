@@ -159,11 +159,12 @@ async def get_model_monitor(
     now = datetime.now(timezone.utc)
 
     t0 = time.perf_counter()
-    model = try_model_forecast(horizon_hours=horizon_hours, resolution_hours=1.0, base_ts=now)
+    model = await try_model_forecast(horizon_hours=horizon_hours, resolution_hours=1.0, base_ts=now, db=db)
     inference_ms = (time.perf_counter() - t0) * 1000.0
 
+    seed_from_db = False
     if model is not None:
-        _ts, gen_kw, load_kw, msg = model
+        _ts, gen_kw, load_kw, msg, seed_from_db = model
         forecast_message = msg
         lstm_active = True
     else:
@@ -185,7 +186,7 @@ async def get_model_monitor(
             consumption_kw=cons_sim,
         )
         if model is not None:
-            ts_m, g_m, c_m, _ = model
+            ts_m, g_m, c_m, _, _ = model
             model_series = ForecastSeries(
                 timestamps=ts_m,
                 generation_kw=[round(x, 4) for x in g_m],
@@ -239,9 +240,11 @@ async def get_model_monitor(
                 b = base_24h + timedelta(hours=h)
                 actual_gen.append(np.mean(bucket_pv[b]) if bucket_pv[b] else None)
                 actual_load.append(np.mean(bucket_load[b]) if bucket_load[b] else None)
-            past_forecast = try_model_forecast(horizon_hours=24, resolution_hours=1.0, base_ts=base_24h)
+            past_forecast = await try_model_forecast(
+                horizon_hours=24, resolution_hours=1.0, base_ts=base_24h, db=db
+            )
             if past_forecast is not None:
-                _ts_p, pred_gen, pred_load, _ = past_forecast
+                _ts_p, pred_gen, pred_load, _, _ = past_forecast
                 live_smape_gen, live_mape_masked_gen, live_mae_gen = _compute_live_metrics(actual_gen, pred_gen)
                 live_smape_load, live_mape_masked_load, live_mae_load = _compute_live_metrics(actual_load, pred_load)
                 live_metrics_hours = 24
@@ -264,6 +267,7 @@ async def get_model_monitor(
 
     gen_info = payload.get("gen")
     load_info = payload.get("load")
+    seed_src = "database" if (model is not None and seed_from_db) else "synthetic"
     return ModelMonitorOut(
         torch_available=payload["torch_available"],
         gen_path=payload["gen_path"],
@@ -274,7 +278,7 @@ async def get_model_monitor(
         gen=gen_info,
         load=load_info,
         errors=merged_errors,
-        seed_source=str(payload.get("seed_source", "synthetic")),
+        seed_source=seed_src,
         ieba_uses_simulated_forecast=False,
         lstm_forecast_active=lstm_active,
         forecast_message=forecast_message,

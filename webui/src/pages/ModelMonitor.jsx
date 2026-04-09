@@ -133,8 +133,9 @@ export default function ModelMonitor({ api }) {
       </div>
 
       <p style={{ color: '#94a3b8', fontSize: '0.9rem', maxWidth: 720 }}>
-        Tracks PyTorch, checkpoint files, and whether the <strong>Forecast</strong> API uses LSTMs. IEBA schedule
-        still uses the <strong>simulated</strong> curve until wired to the model.
+        Tracks PyTorch, checkpoint files, and whether the <strong>Forecast</strong> API uses LSTMs. <strong>IEBA</strong>{' '}
+        (<code>/schedule/run</code>) uses the same <strong>hybrid</strong> forecast as <strong>/forecast</strong> when
+        checkpoints exist (Open-Meteo PV when enabled in settings; consumption from the load LSTM).
       </p>
 
       {err && (
@@ -164,7 +165,15 @@ export default function ModelMonitor({ api }) {
               <code style={{ color: '#38bdf8' }}>{data.inference_ms != null ? `${data.inference_ms} ms` : '–'}</code>
             </div>
             <div style={{ marginBottom: 8 }}>
-              <strong>Seed</strong>: {data.seed_source} (DB-backed seed = future improvement)
+              <strong>Seed</strong>: {data.seed_source}
+              {data.seed_source === 'database' ? (
+                <span style={{ color: '#94a3b8' }}> — LSTM window from MySQL (PV, SOC, load; ambient as-of).</span>
+              ) : (
+                <span style={{ color: '#94a3b8' }}>
+                  {' '}
+                  — synthetic constants (no battery rows in range yet, or DB unavailable during inference).
+                </span>
+              )}
             </div>
             <div style={{ color: '#cbd5e1' }}>{data.forecast_message}</div>
           </div>

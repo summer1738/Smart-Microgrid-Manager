@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 1280" font-family="Segoe UI, system-ui, sans-serif">
+  <defs>
+    <style>
+      .title { font-size: 18px; font-weight: 700; fill: #0f172a; }
+      .sub { font-size: 12px; fill: #475569; }
+      .pin { font-size: 11px; font-weight: 600; fill: #0f172a; }
+      .box { fill: #f8fafc; stroke: #334155; stroke-width: 1.5; rx: 6; }
+      .esp { fill: #1e293b; stroke: #0ea5e9; stroke-width: 2; rx: 8; }
+      .leg { font-size: 10px; fill: #64748b; }
+      .note { font-size: 10px; fill: #475569; }
+    </style>
+  </defs>
+  <rect width="100%" height="100%" fill="#ffffff"/>
+
+  <text x="460" y="36" text-anchor="middle" class="title">DOIT ESP32 DevKit V1 - wiring without physical switches</text>
+  <text x="460" y="56" text-anchor="middle" class="sub">No physical switches (D18/D19 unused) | Red = 3V3/VCC | Black = GND</text>
+
+  <rect x="340" y="90" width="240" height="920" class="esp"/>
+  <text x="460" y="125" text-anchor="middle" fill="#e2e8f0" font-size="14" font-weight="700">ESP32</text>
+  <text x="460" y="145" text-anchor="middle" fill="#94a3b8" font-size="10">USB toward bottom (typical)</text>
+
+  <g id="left-pins">
+    <text x="300" y="118" text-anchor="end" class="pin">VIN</text>
+    <text x="300" y="158" text-anchor="end" class="pin">GND</text>
+    <text x="300" y="198" text-anchor="end" class="pin">D13</text>
+    <text x="300" y="238" text-anchor="end" class="pin">D12</text>
+    <text x="300" y="278" text-anchor="end" class="pin">D14</text>
+    <text x="300" y="318" text-anchor="end" class="pin">D27</text>
+    <text x="300" y="358" text-anchor="end" class="pin">D26</text>
+    <text x="300" y="398" text-anchor="end" class="pin">D25</text>
+    <text x="300" y="438" text-anchor="end" class="pin">D33</text>
+    <text x="300" y="478" text-anchor="end" class="pin">D32</text>
+    <text x="300" y="518" text-anchor="end" class="pin">D35</text>
+    <text x="300" y="558" text-anchor="end" class="pin">D34</text>
+    <text x="300" y="598" text-anchor="end" class="pin">UN</text>
+    <text x="300" y="638" text-anchor="end" class="pin">UP</text>
+    <text x="300" y="678" text-anchor="end" class="pin">EN</text>
+  </g>
+
+  <g id="right-pins">
+    <text x="620" y="118" class="pin">3V3</text>
+    <text x="620" y="158" class="pin">GND</text>
+    <text x="620" y="198" class="pin">D15</text>
+    <text x="620" y="238" class="pin">D2</text>
+    <text x="620" y="278" class="pin">D4</text>
+    <text x="620" y="318" class="pin">RX2</text>
+    <text x="620" y="358" class="pin">TX2</text>
+    <text x="620" y="398" class="pin">D5</text>
+    <text x="620" y="438" class="pin">D18</text>
+    <text x="620" y="478" class="pin">D19</text>
+    <text x="620" y="518" class="pin">D21</text>
+    <text x="620" y="558" class="pin">RXO</text>
+    <text x="620" y="598" class="pin">TXO</text>
+    <text x="620" y="638" class="pin">D22</text>
+    <text x="620" y="678" class="pin">D23</text>
+  </g>
+
+  <rect x="680" y="240" width="200" height="88" class="box"/>
+  <text x="780" y="265" text-anchor="middle" font-size="12" font-weight="700">DHT11</text>
+  <text x="780" y="285" text-anchor="middle" class="leg">+ to 3V3 (red) | out to D4 (blue) + 10k to 3V3</text>
+  <text x="780" y="302" text-anchor="middle" class="leg">- to GND (black)</text>
+  <line x1="580" y1="268" x2="680" y2="268" stroke="#2563eb" stroke-width="2.5"/>
+  <line x1="580" y1="118" x2="720" y2="250" stroke="#dc2626" stroke-width="2"/>
+  <line x1="580" y1="158" x2="720" y2="290" stroke="#171717" stroke-width="2"/>
+
+  <rect x="680" y="360" width="200" height="72" class="box"/>
+  <text x="780" y="385" text-anchor="middle" font-size="12" font-weight="700">Digital light</text>
+  <text x="780" y="405" text-anchor="middle" class="leg">VCC to 3V3 | GND | DO to D21 (green)</text>
+  <line x1="580" y1="508" x2="680" y2="390" stroke="#16a34a" stroke-width="2.5"/>
+
+  <rect x="680" y="450" width="200" height="58" class="box"/>
+  <text x="780" y="472" text-anchor="middle" font-size="12" font-weight="700">Switches</text>
+  <text x="780" y="492" text-anchor="middle" class="leg">Omitted - do not wire D18/D19 (optional INPUT_PULLUP)</text>
+
+  <rect x="40" y="350" width="220" height="105" class="box"/>
+  <text x="150" y="375" text-anchor="middle" font-size="12" font-weight="700">LED loads (polarity)</text>
+  <text x="150" y="393" text-anchor="middle" class="leg">D25 - 220R - LED anode (+ long leg)</text>
+  <text x="150" y="408" text-anchor="middle" class="leg">LED cathode (- short) - GND (yellow)</text>
+  <text x="150" y="426" text-anchor="middle" class="leg">D26 - 220R - LED anode (+)</text>
+  <text x="150" y="441" text-anchor="middle" class="leg">LED cathode (-) - GND (cyan)</text>
+  <line x1="340" y1="388" x2="240" y2="388" stroke="#ca8a04" stroke-width="2.5"/>
+  <line x1="340" y1="348" x2="240" y2="408" stroke="#0891b2" stroke-width="2.5"/>
+
+  <rect x="40" y="500" width="240" height="118" class="box"/>
+  <text x="160" y="525" text-anchor="middle" font-size="12" font-weight="700">Buzzers (polarity + NPN)</text>
+  <text x="160" y="543" text-anchor="middle" class="leg">Buzzer+ to 3V3 | Buzzer- to NPN collector</text>
+  <text x="160" y="558" text-anchor="middle" class="leg">Emitter to GND | Base via 1k from GPIO</text>
+  <text x="160" y="576" text-anchor="middle" class="leg">D27 - 1k - base - Buzzer1 (grey)</text>
+  <text x="160" y="591" text-anchor="middle" class="leg">D14 - 1k - base - Buzzer2 (white)</text>
+  <text x="160" y="606" text-anchor="middle" class="leg">Match + and - on buzzer; active 2-wire type - see README</text>
+  <line x1="340" y1="308" x2="240" y2="540" stroke="#6b7280" stroke-width="2.5"/>
+  <line x1="340" y1="268" x2="220" y2="560" stroke="#9ca3af" stroke-width="2.5"/>
+
+  <rect x="40" y="720" width="840" height="120" class="box"/>
+  <text x="460" y="748" text-anchor="middle" font-size="13" font-weight="700">Connection summary</text>
+  <text x="460" y="772" text-anchor="middle" class="note">DHT11 out: D4 | Light DO: D21 | (D18/D19 not used)</text>
+  <text x="460" y="792" text-anchor="middle" class="note">LED1: D25 | LED2: D26 | Buzzer1: D27 | Buzzer2: D14 | Power: 3V3 + GND</text>
+  <text x="460" y="818" text-anchor="middle" class="note">Firmware GPIO: 4, 21, 25, 26, 27, 14 (omit D18/D19 if no switches)</text>
+
+  <text x="460" y="1180" text-anchor="middle" class="note">Source: esp32_doit_final_wiring.svg - edit in Inkscape or any text editor.</text>
+</svg>

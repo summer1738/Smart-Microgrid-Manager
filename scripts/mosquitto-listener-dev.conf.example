@@ -1,0 +1,16 @@
+# Dev-only: listen on all interfaces so an ESP32 on Wi‑Fi can reach this PC.
+# Default Ubuntu Mosquitto often binds only to 127.0.0.1 — remote devices cannot connect.
+#
+# Install:
+#   sudo cp /path/to/smart-microgrid-manager/scripts/mosquitto-listener-dev.conf.example /etc/mosquitto/conf.d/99-local-dev.conf
+#   sudo systemctl restart mosquitto
+#   ss -tlnp | grep 1883
+# You want to see 0.0.0.0:1883 (or the LAN IP), not only 127.0.0.1:1883.
+#
+# If mosquitto fails to start (port in use), edit /etc/mosquitto/mosquitto.conf and any
+# files under conf.d/ that set listener 1883 on 127.0.0.1 only — use one listener on 0.0.0.0.
+#
+# Security: allow_anonymous true is for a trusted LAN only. Use passwords/TLS for production.
+
+listener 1883 0.0.0.0
+allow_anonymous true

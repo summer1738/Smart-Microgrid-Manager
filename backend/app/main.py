@@ -62,10 +62,32 @@ async def lifespan(app: FastAPI):
         await controller.start()
         log.info("Controller loop started")
     if not settings.use_hardware_simulation:
+        try:
+            import paho.mqtt.client as _paho_check  # noqa: F401
+        except Exception:
+            log.error(
+                "MICROGRID_USE_HARDWARE_SIMULATION=false but paho-mqtt is not importable. "
+                "Install: pip install paho-mqtt"
+            )
         from app.services.mqtt_ingest_service import MqttIngestLoop
+
         mqtt_ingest = MqttIngestLoop()
-        await mqtt_ingest.start()
-        log.info("MQTT ingest loop started (host=%s port=%s prefix=%s)", settings.mqtt_host, settings.mqtt_port, settings.mqtt_topic_prefix)
+        started = await mqtt_ingest.start()
+        if started:
+            log.info(
+                "MQTT ingest loop started (host=%s port=%s prefix=%s)",
+                settings.mqtt_host,
+                settings.mqtt_port,
+                settings.mqtt_topic_prefix,
+            )
+        else:
+            log.error(
+                "MQTT ingest failed to start — live ESP32/MQTT data will not appear until the broker is reachable at %s:%s. "
+                "Will retry every 15s in the background (start Mosquitto; no uvicorn restart needed once it is up).",
+                settings.mqtt_host,
+                settings.mqtt_port,
+            )
+            mqtt_ingest.schedule_reconnect_background()
     from app.services.auto_train_service import AutoTrainLoop, set_global_auto_trainer
     auto_trainer = AutoTrainLoop()
     set_global_auto_trainer(auto_trainer)

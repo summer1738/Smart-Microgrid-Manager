@@ -138,6 +138,7 @@ Topics:
 - Telemetry in:
   - `microgrid/sensors/pv`
   - `microgrid/sensors/battery`
+  - `microgrid/sensors/environment` (optional: DHT11 + digital light — JSON `temperature_c`, `humidity_percent`, `light_digital`; surfaced on `/status`)
   - `microgrid/sensors/load/<appliance_external_id>`
 - Relay command out (backend -> Pi):
   - `microgrid/cmd/relay/<appliance_external_id>` with payload `{"is_on": true|false, ...}`

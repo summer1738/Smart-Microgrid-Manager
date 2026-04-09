@@ -13,6 +13,7 @@ from app.services.weather_open_meteo import (
     lookup_hour,
 )
 from app.services.system_settings_service import get_weather_settings
+from app.database import async_session
 from app.services.ml_forecast_service import try_model_forecast
 
 # Simulator lives at project root; run with PYTHONPATH=..
@@ -175,7 +176,13 @@ async def generate_hybrid_forecast(
     """
     base_ts = base_ts or datetime.now(timezone.utc)
 
-    model = try_model_forecast(horizon_hours=horizon_hours, resolution_hours=resolution_hours, base_ts=base_ts)
+    async with async_session() as session:
+        model = await try_model_forecast(
+            horizon_hours=horizon_hours,
+            resolution_hours=resolution_hours,
+            base_ts=base_ts,
+            db=session,
+        )
     w_ts, w_gen, w_cons, w_msg = await generate_forecast_with_weather(
         horizon_hours=horizon_hours, resolution_hours=resolution_hours, base_ts=base_ts
     )
@@ -183,7 +190,7 @@ async def generate_hybrid_forecast(
     if model is None:
         return w_ts, w_gen, w_cons, w_msg
 
-    m_ts, m_gen, m_load, m_msg = model
+    m_ts, m_gen, m_load, m_msg, _seed_db = model
     # Align on timestamps length (hourly). If mismatch, keep model series as-is.
     use_weather_pv = len(w_gen) == len(m_gen) and "PV from Open-Meteo" in (w_msg or "")
     gen = w_gen if use_weather_pv else m_gen

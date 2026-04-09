@@ -1,8 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { MultiLineChart, DonutChart, HorizontalBarChart } from '../components/Charts'
 import { MqttStatusTooltip } from '../components/MqttStatusTooltip'
 import { useAppSettings } from '../context/AppSettingsContext'
 import { getMqttBadge } from '../utils/mqttStatus'
+import SensorPipelineAlert from '../components/SensorPipelineAlert'
 
 function downsample(points, max = 120) {
   if (!points?.length || points.length <= max) return points
@@ -27,7 +29,7 @@ export default function Dashboard({ api }) {
     fetch(`${api}/status/history?hours=24`)
       .then((r) => r.json())
       .then(setHistory)
-      .catch(() => setHistory({ points: [] }))
+      .catch(() => setHistory({ points: [], ambient_points: [] }))
   }
 
   useEffect(() => {
@@ -57,14 +59,17 @@ export default function Dashboard({ api }) {
     fetchStatus()
     fetchHistory()
     fetchMqttHealth()
-    const interval = setInterval(() => {
+    const live = setInterval(() => {
       fetchStatus()
-      fetchHistory()
       fetchMqttHealth()
-    }, 10000)
+    }, 5000)
+    const historyEvery = setInterval(() => {
+      fetchHistory()
+    }, 30000)
     return () => {
       cancelled = true
-      clearInterval(interval)
+      clearInterval(live)
+      clearInterval(historyEvery)
     }
   }, [api])
 
@@ -76,6 +81,17 @@ export default function Dashboard({ api }) {
       pv: pts.map((p) => p.power_kw ?? 0),
       load: pts.map((p) => p.total_load_kw ?? 0),
       exportable: pts.map((p) => p.available_export_kw ?? 0),
+      labels: pts.map((p) => (p.timestamp ? new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '')),
+    }
+  }, [history])
+
+  const ambientChartData = useMemo(() => {
+    const pts = downsample(history?.ambient_points || [], 100)
+    if (!pts.length) return null
+    return {
+      temp: pts.map((p) => (p.temperature_c != null ? Number(p.temperature_c) : 0)),
+      hum: pts.map((p) => (p.humidity_percent != null ? Number(p.humidity_percent) : 0)),
+      light: pts.map((p) => (p.light_digital === true ? 100 : 0)),
       labels: pts.map((p) => (p.timestamp ? new Date(p.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '')),
     }
   }, [history])
@@ -96,6 +112,10 @@ export default function Dashboard({ api }) {
     manual_override_detected,
     manual_override_messages,
     simulated,
+    ambient_temperature_c,
+    ambient_humidity_percent,
+    ambient_light_digital,
+    ambient_sensors_updated_at,
   } = status
   const ts = status.timestamp ? new Date(status.timestamp).toLocaleString() : '–'
   const loadBars = loads
@@ -123,9 +143,40 @@ export default function Dashboard({ api }) {
   const batteryStatusColor =
     battery_status_level === 'success' ? '#22c55e' : battery_status_level === 'warning' ? '#f59e0b' : '#94a3b8'
 
+  const hasAmbientReadings =
+    ambient_temperature_c != null || ambient_humidity_percent != null || ambient_light_digital != null
+  const ambientValueLine = hasAmbientReadings
+    ? [
+        ambient_temperature_c != null ? `${Number(ambient_temperature_c).toFixed(1)} °C` : null,
+        ambient_humidity_percent != null ? `${Number(ambient_humidity_percent).toFixed(0)} % RH` : null,
+        ambient_light_digital != null ? (ambient_light_digital ? 'Light: bright' : 'Light: dark') : null,
+      ]
+        .filter(Boolean)
+        .join(' · ') || '—'
+    : simulated
+      ? '—'
+      : 'Waiting for readings…'
+  const ambientSub = hasAmbientReadings ? (
+    ambient_sensors_updated_at ? (
+      `Updated ${new Date(ambient_sensors_updated_at).toLocaleString()}`
+    ) : (
+      'From MQTT …/sensors/environment'
+    )
+  ) : simulated ? (
+    'Not connected in simulation mode.'
+  ) : (
+    <span style={{ color: '#64748b' }}>
+      <Link to="/hardware" style={{ color: '#38bdf8' }}>
+        Hardware
+      </Link>{' '}
+      has GPIO + MQTT timing. Topic <code style={{ fontSize: '0.75rem' }}>microgrid/sensors/environment</code>.
+    </span>
+  )
+
   return (
     <div>
       <h1>Dashboard</h1>
+      <SensorPipelineAlert pipeline={mqttHealth?.sensor_pipeline} />
       {mqttBadge && (
         <div
           style={{ position: 'relative', display: 'inline-block', marginBottom: '0.75rem' }}
@@ -178,6 +229,7 @@ export default function Dashboard({ api }) {
       <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Last updated: {ts}</p>
 
       <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '1rem', marginTop: '1.5rem', alignItems: 'start' }}>
+        <Card title="Ambient (ESP32) — live" value={ambientValueLine} sub={ambientSub} />
         <Card title="PV generation" value={`${pv.power_kw.toFixed(2)} kW`} sub={`${pv.voltage} V, ${pv.current_a.toFixed(1)} A`} />
         <div style={{ background: '#1e293b', padding: '1rem', borderRadius: 8, display: 'flex', justifyContent: 'center' }}>
           <DonutChart value={battery.soc_percent} label="Battery SOC" color="#0ea5e9" />
@@ -214,6 +266,25 @@ export default function Dashboard({ api }) {
               { name: 'Exportable kW', color: '#a855f7', values: chartData.exportable },
             ]}
             labels={chartData.labels}
+            height={180}
+          />
+        </section>
+      )}
+
+      {ambientChartData && (
+        <section style={{ marginTop: '1.5rem', background: '#1e293b', padding: '1rem', borderRadius: 8 }}>
+          <h2 style={{ fontSize: '1rem', marginBottom: 4 }}>Ambient (ESP32) — last 24h</h2>
+          <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: 8 }}>
+            Temperature (°C), humidity (%), light sensor (0 = dark, 100 = bright on this chart).
+          </p>
+          <MultiLineChart
+            title="DHT11 + digital light"
+            series={[
+              { name: 'Temp °C', color: '#f97316', values: ambientChartData.temp },
+              { name: 'RH %', color: '#38bdf8', values: ambientChartData.hum },
+              { name: 'Light', color: '#eab308', values: ambientChartData.light },
+            ]}
+            labels={ambientChartData.labels}
             height={180}
           />
         </section>
@@ -283,7 +354,7 @@ function Card({ title, value, sub }) {
     <div style={{ background: '#1e293b', padding: '1rem', borderRadius: 8 }}>
       <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>{title}</div>
       <div style={{ fontSize: '1.5rem', fontWeight: 600, marginTop: 4 }}>{value}</div>
-      {sub && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 4 }}>{sub}</div>}
+      {sub != null && sub !== '' && <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 4 }}>{sub}</div>}
     </div>
   )
 }
