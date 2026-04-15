@@ -44,6 +44,17 @@ class ApplianceOut(BaseModel):
         from_attributes = True
 
 
+class UserOut(BaseModel):
+    """Public user row for sign-in picker (no password)."""
+
+    id: int
+    name: str
+    role: str
+
+    class Config:
+        from_attributes = True
+
+
 class PvSnapshot(BaseModel):
     power_kw: float
     voltage: float

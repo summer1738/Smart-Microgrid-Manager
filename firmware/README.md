@@ -28,7 +28,7 @@ Set **`WIFI_SSID`**, **`WIFI_PASSWORD`**, **`MQTT_HOST`** (IP of the machine run
 
 ## Wi‑Fi and MQTT (how the ESP32 connects)
 
-The sketch already connects **through Wi‑Fi** using **`WiFi.begin(WIFI_SSID, WIFI_PASSWORD)`** in `setupWifiMqtt()` — there is no separate “Ethernet” path for this prototype.
+The sketch connects **through Wi‑Fi** (`connectWifiBlocking()` → `WiFi.begin(...)`) — there is no separate “Ethernet” path for this prototype. On success, Serial prints **`WiFi: connected.`** plus **IP**, **gateway**, and **RSSI**; if the link drops, **`ensureWifiConnected()`** tries to reconnect before MQTT runs.
 
 1. **Same network as your PC** — The ESP32 must join the same **LAN** as the computer running Mosquitto (or a reachable broker). Use your home/office **SSID** and **password** in `secrets.h` (same router the PC uses).
 
@@ -38,7 +38,7 @@ The sketch already connects **through Wi‑Fi** using **`WiFi.begin(WIFI_SSID, W
 
 4. **Mosquitto must accept LAN clients** — On the PC, the broker should listen on **`0.0.0.0:1883`**, not only `127.0.0.1`, or the ESP32 cannot connect. See `scripts/mosquitto-listener-dev.conf.example` in the repo.
 
-5. **Serial** — Open **115200 baud** after upload; you should see Wi‑Fi connection, then IP, then MQTT subscribe lines.
+5. **Serial** — Open **115200 baud** after upload; you should see **`WiFi: connected.`** with **IP / gateway / RSSI**, then **`MQTT... ok`** and subscribe lines. If Wi‑Fi fails, the sketch prints an error and **status code** (then halts until you fix `secrets.h` and reset).
 
 6. **Firewall** — Allow **TCP 1883** on the PC if you use `ufw` or similar.
 

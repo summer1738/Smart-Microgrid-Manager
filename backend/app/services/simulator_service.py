@@ -8,7 +8,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Appliance, BatteryReading, LoadReading, PvReading
+from app.models import Appliance, BatteryReading, LoadReading, PvReading, User
 
 # Simulator lives at project root (smart-microgrid-manager/simulator). Run backend with:
 #   cd backend && PYTHONPATH=.. uvicorn app.main:app --reload
@@ -50,6 +50,18 @@ async def ensure_default_user_and_appliances(session: AsyncSession) -> None:
             rated_watts=float(spec["rated_watts"]),
         )
         session.add(app)
+    await session.flush()
+
+
+async def ensure_demo_role_users(session: AsyncSession) -> None:
+    """Add viewer/operator accounts for role-based UI (idempotent by display name)."""
+    for name, role in (
+        ("Dashboard viewer", "viewer"),
+        ("Site operator", "operator"),
+    ):
+        r = await session.execute(select(User).where(User.name == name))
+        if r.scalar_one_or_none() is None:
+            session.add(User(name=name, role=role))
     await session.flush()
 
 

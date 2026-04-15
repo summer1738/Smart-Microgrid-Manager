@@ -51,6 +51,9 @@ static const float KW_BUZZ_A = 0.012f;
 static const float KW_BUZZ_B = 0.012f;
 
 static const unsigned long TELEMETRY_MS = 5000;
+/** First boot: allow time to find AP. Reconnect uses a shorter timeout. */
+static const unsigned long WIFI_FIRST_CONNECT_MS = 60000;
+static const unsigned long WIFI_RECONNECT_MS = 30000;
 
 DHT dht(PIN_DHT, DHT11);
 WiFiClient wifiClient;
@@ -243,6 +246,52 @@ void publishPvBattery() {
   mqtt.publish(batTopic, jsonBuf, false);
 }
 
+/** Returns true when associated and have an IP. Prints SSID/IP/RSSI on success. */
+bool connectWifiBlocking(const char* phaseLabel, unsigned long timeoutMs) {
+  Serial.println();
+  Serial.print(phaseLabel);
+  Serial.print(" WiFi, SSID: ");
+  Serial.println(WIFI_SSID);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.disconnect(true);
+  delay(100);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  uint32_t t0 = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis() - t0) < timeoutMs) {
+    delay(400);
+    Serial.print(".");
+  }
+  Serial.println();
+
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi: connection failed. Use 2.4 GHz SSID, correct password in secrets.h, and AP in range.");
+    Serial.print("WiFi status code: ");
+    Serial.println((int)WiFi.status());
+    return false;
+  }
+
+  Serial.println("WiFi: connected.");
+  Serial.print("  IP:      ");
+  Serial.println(WiFi.localIP());
+  Serial.print("  Gateway: ");
+  Serial.println(WiFi.gatewayIP());
+  Serial.print("  RSSI:    ");
+  Serial.print(WiFi.RSSI());
+  Serial.println(" dBm");
+  return true;
+}
+
+void ensureWifiConnected() {
+  if (WiFi.status() == WL_CONNECTED) {
+    return;
+  }
+  Serial.println("WiFi: link lost, reconnecting...");
+  connectWifiBlocking("Reconnecting to", WIFI_RECONNECT_MS);
+}
+
 void setupPins() {
   pinMode(PIN_LIGHT_DO, INPUT);
   pinMode(PIN_LED_A, OUTPUT);
@@ -256,16 +305,12 @@ void setupPins() {
 }
 
 void setupWifiMqtt() {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+  if (!connectWifiBlocking("Connecting to", WIFI_FIRST_CONNECT_MS)) {
+    Serial.println("Halting — fix WiFi in secrets.h, then press EN/RESET.");
+    while (true) {
+      delay(5000);
+    }
   }
-  Serial.println();
-  Serial.print("IP: ");
-  Serial.println(WiFi.localIP());
 
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(mqttCallback);
@@ -317,6 +362,7 @@ void setup() {
 }
 
 void loop() {
+  ensureWifiConnected();
   if (!mqttReconnect()) {
     delay(2000);
     return;
