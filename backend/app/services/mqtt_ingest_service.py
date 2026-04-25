@@ -145,6 +145,18 @@ class MqttIngestLoop:
         self._client: Optional[mqtt.Client] = None if mqtt is not None else None
         self._running = False
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._seen_first_pv = False
+        self._seen_first_battery = False
+        self._seen_first_load_ids: set[str] = set()
+
+    @staticmethod
+    def _subscription_topics(prefix: str) -> list[tuple[str, int]]:
+        return [
+            (sensor_pv_topic(prefix), 1),
+            (sensor_battery_topic(prefix), 1),
+            (f"{prefix}/sensors/load/+", 1),
+            (f"{prefix}/ack/relay/+", 0),
+        ]
 
     async def start(self) -> None:
         if self._running or mqtt is None:
@@ -155,10 +167,9 @@ class MqttIngestLoop:
         client.on_connect = self._on_connect
         client.on_message = self._on_message
         client.connect(settings.mqtt_host, int(settings.mqtt_port), 30)
-        client.subscribe(sensor_pv_topic(prefix), qos=1)
-        client.subscribe(sensor_battery_topic(prefix), qos=1)
-        client.subscribe(f"{prefix}/sensors/load/+", qos=1)
-        client.subscribe(f"{prefix}/ack/relay/+", qos=0)
+        for topic, qos in self._subscription_topics(prefix):
+            client.subscribe(topic, qos=qos)
+            log.info("MQTT subscribe topic=%s qos=%s", topic, qos)
         client.loop_start()
         self._client = client
         self._running = True
@@ -185,10 +196,9 @@ class MqttIngestLoop:
         _mqtt_health["connected"] = True
         log.info("MQTT connected")
         prefix = settings.mqtt_topic_prefix
-        client.subscribe(sensor_pv_topic(prefix), qos=1)
-        client.subscribe(sensor_battery_topic(prefix), qos=1)
-        client.subscribe(f"{prefix}/sensors/load/+", qos=1)
-        client.subscribe(f"{prefix}/ack/relay/+", qos=0)
+        for topic, qos in self._subscription_topics(prefix):
+            client.subscribe(topic, qos=qos)
+            log.info("MQTT subscribe topic=%s qos=%s", topic, qos)
 
     def _on_message(self, client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage) -> None:
         if self._loop is None:
@@ -203,16 +213,25 @@ class MqttIngestLoop:
         _mqtt_health["last_message_at"] = _now_iso()
         if topic == sensor_pv_topic(prefix):
             _mqtt_health["last_pv_at"] = _now_iso()
+            if not self._seen_first_pv:
+                self._seen_first_pv = True
+                log.info("MQTT first PV telemetry received on %s (gateway online)", topic)
             asyncio.run_coroutine_threadsafe(_persist_pv(payload), self._loop)
             return
         if topic == sensor_battery_topic(prefix):
             _mqtt_health["last_battery_at"] = _now_iso()
+            if not self._seen_first_battery:
+                self._seen_first_battery = True
+                log.info("MQTT first battery telemetry received on %s (gateway online)", topic)
             asyncio.run_coroutine_threadsafe(_persist_battery(payload), self._loop)
             return
         ext_id = parse_sensor_load_topic(prefix, topic)
         if ext_id is not None:
             _mqtt_health.setdefault("last_load_at", {})
             _mqtt_health["last_load_at"][ext_id] = _now_iso()
+            if ext_id not in self._seen_first_load_ids:
+                self._seen_first_load_ids.add(ext_id)
+                log.info("MQTT first load telemetry ext_id=%s topic=%s", ext_id, topic)
             asyncio.run_coroutine_threadsafe(_persist_load(ext_id, payload), self._loop)
             return
         # Ack topic is currently informational only.

@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     mqtt_port: int = 1883
     mqtt_topic_prefix: str = "microgrid"
     mqtt_client_id: str = "smart-microgrid-backend"
+    # Optional USB serial fallback bridge (ESP32 [USB] JSON -> MQTT topics).
+    esp32_usb_fallback_enabled: bool = False
+    esp32_usb_port: str = "/dev/ttyUSB0"
+    esp32_usb_baudrate: int = 115200
     # Weather → PV (Open-Meteo, no API key). Used for /forecast and IEBA when LSTM not used.
     weather_forecast_enabled: bool = True
     weather_latitude: float = -17.8

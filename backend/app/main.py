@@ -56,6 +56,7 @@ async def lifespan(app: FastAPI):
     controller = None
     auto_trainer = None
     mqtt_ingest = None
+    usb_fallback_bridge = None
     if settings.use_hardware_simulation and settings.controller_loop_enabled:
         from app.services.controller_loop import ControllerLoop
         controller = ControllerLoop()
@@ -66,6 +67,12 @@ async def lifespan(app: FastAPI):
         mqtt_ingest = MqttIngestLoop()
         await mqtt_ingest.start()
         log.info("MQTT ingest loop started (host=%s port=%s prefix=%s)", settings.mqtt_host, settings.mqtt_port, settings.mqtt_topic_prefix)
+        if settings.esp32_usb_fallback_enabled:
+            from app.services.esp32_usb_fallback_service import Esp32UsbFallbackBridge
+            usb_fallback_bridge = Esp32UsbFallbackBridge()
+            started = await usb_fallback_bridge.start()
+            if not started:
+                log.warning("ESP32 USB fallback bridge was enabled but did not start (see prior warning).")
     from app.services.auto_train_service import AutoTrainLoop, set_global_auto_trainer
     auto_trainer = AutoTrainLoop()
     set_global_auto_trainer(auto_trainer)
@@ -84,6 +91,9 @@ async def lifespan(app: FastAPI):
     if mqtt_ingest is not None:
         await mqtt_ingest.stop()
         log.info("MQTT ingest loop stopped")
+    if usb_fallback_bridge is not None:
+        await usb_fallback_bridge.stop()
+        log.info("ESP32 USB fallback bridge stopped")
 
 
 app = FastAPI(

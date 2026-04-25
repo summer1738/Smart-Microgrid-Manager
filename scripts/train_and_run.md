@@ -10,12 +10,23 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -U pip
 pip install -r backend/requirements.txt
+# USB fallback bridge dependency (ESP32 Serial -> MQTT) if needed:
+pip install pyserial
 ```
 
 Optional — LSTM training & inference (PyTorch CPU):
 
 ```bash
 pip install --extra-index-url https://download.pytorch.org/whl/cpu -r ai/requirements-torch-cpu.txt
+```
+
+Optional — align DB appliance IDs for ESP32 relay topics (`proto_led_a`, `proto_led_b`):
+
+```bash
+cd ~/Documents/smart-microgrid-manager/backend
+source ../.venv/bin/activate
+export PYTHONPATH=.
+python scripts/align_esp32_appliance_ids.py
 ```
 
 ## Run backend + web UI
