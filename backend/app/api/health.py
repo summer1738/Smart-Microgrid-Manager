@@ -1,7 +1,8 @@
 """Health endpoints for runtime diagnostics."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.auth import require_min_role
 from app.config import settings
 from app.services.mqtt_ingest_service import get_mqtt_health, get_sensor_pipeline_issues
 from app.services.mqtt_topics import (
@@ -13,7 +14,11 @@ from app.services.mqtt_topics import (
     sensor_pv_topic,
 )
 
-router = APIRouter(prefix="/health", tags=["health"])
+router = APIRouter(
+    prefix="/health",
+    tags=["health"],
+    dependencies=[Depends(require_min_role("viewer"))],
+)
 
 
 @router.get("/mqtt")
@@ -37,4 +42,3 @@ async def mqtt_health() -> dict:
             "live_sensors_ok": len(pipeline_issues) == 0,
         },
     }
-

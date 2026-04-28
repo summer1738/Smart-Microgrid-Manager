@@ -9,7 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from app.api import appliances, forecast, health, schedule, status, system_settings, users
+from app.api import appliances, auth, forecast, health, schedule, status, system_settings, users
 from app.config import settings
 from app.database import init_db
 from app.logging_config import setup_logging
@@ -24,12 +24,14 @@ async def seed_default_user():
     """Create default user and appliances so simulation and API work out of the box."""
     from app.database import async_session
     from app.services.simulator_service import (
+        ensure_auth_seed_users,
         ensure_default_user_and_appliances,
         ensure_demo_role_users,
     )
     async with async_session() as session:
         await ensure_default_user_and_appliances(session)
         await ensure_demo_role_users(session)
+        await ensure_auth_seed_users(session)
         await session.commit()
 
 
@@ -145,6 +147,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(appliances.router)
 app.include_router(status.router)
@@ -167,5 +170,6 @@ async def root():
         "schedule": "/schedule",
         "health_mqtt": "/health/mqtt",
         "system_settings": "/system/settings",
-        "users": "/users",
+        "auth_login": "/auth/login",
+        "auth_me": "/auth/me",
     }

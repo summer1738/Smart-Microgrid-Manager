@@ -4,11 +4,16 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_min_role
 from app.database import get_db
 from app.models import User
 from app.schemas import UserOut
 
-router = APIRouter(prefix="/users", tags=["users"])
+router = APIRouter(
+    prefix="/users",
+    tags=["users"],
+    dependencies=[Depends(require_min_role("admin"))],
+)
 
 
 @router.get("", response_model=list[UserOut])

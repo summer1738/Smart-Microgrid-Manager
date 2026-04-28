@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_min_role
 from app.config import settings
 from app.database import get_db
 from app.models import BatteryReading, LoadReading, PvReading
@@ -59,6 +60,7 @@ async def get_weather_insights(
     forecast_days: int = Query(16, ge=7, le=16, description="Open-Meteo supports up to 16 days."),
     history_days: int = Query(30, ge=7, le=90),
     include_hourly: bool = Query(False, description="Include full hourly series (large JSON)."),
+    _user=Depends(require_min_role("viewer")),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
@@ -78,6 +80,7 @@ async def get_weather_insights(
 @router.get("/generation-long-range")
 async def get_generation_long_range(
     forecast_days: int = Query(16, ge=1, le=16, description="Maximum supported long-range generation horizon."),
+    _user=Depends(require_min_role("viewer")),
 ) -> dict:
     """
     Return expected PV production for as long as the weather provider can support.
@@ -87,7 +90,10 @@ async def get_generation_long_range(
 
 
 @router.get("/training-status")
-async def get_training_status(db: AsyncSession = Depends(get_db)) -> dict:
+async def get_training_status(
+    _user=Depends(require_min_role("admin")),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     """
     Preconditions for UI-driven LSTM training: DB sample count, PyTorch, scheduled auto-train flag.
     """
@@ -120,7 +126,10 @@ async def get_training_status(db: AsyncSession = Depends(get_db)) -> dict:
 
 
 @router.get("", response_model=ForecastOut)
-async def get_forecast(horizon_hours: int = 24) -> ForecastOut:
+async def get_forecast(
+    horizon_hours: int = 24,
+    _user=Depends(require_min_role("viewer")),
+) -> ForecastOut:
     """
     Return 24–48h forecast.
     - If trained models exist in `ai/models/*.pt` and torch is installed, use them.
@@ -148,6 +157,7 @@ async def get_forecast(horizon_hours: int = 24) -> ForecastOut:
 async def get_model_monitor(
     horizon_hours: int = 24,
     compare: bool = False,
+    _user=Depends(require_min_role("admin")),
     db: AsyncSession = Depends(get_db),
 ) -> ModelMonitorOut:
     """
@@ -296,7 +306,9 @@ async def get_model_monitor(
 
 
 @router.post("/monitor/train-now")
-async def train_models_now() -> dict:
+async def train_models_now(
+    _user=Depends(require_min_role("admin")),
+) -> dict:
     """
     Trigger one immediate training attempt (same logic as auto-train loop).
     """
@@ -315,7 +327,9 @@ async def train_models_now() -> dict:
 
 
 @router.post("/monitor/train-now-async")
-async def train_models_now_async() -> dict:
+async def train_models_now_async(
+    _user=Depends(require_min_role("admin")),
+) -> dict:
     """
     Start training in the background with step + streaming log tail progress.
     Returns the active job state.
@@ -333,7 +347,10 @@ async def train_models_now_async() -> dict:
 
 
 @router.get("/monitor/train-now-progress")
-async def train_models_now_progress(job_id: Optional[str] = None) -> dict:
+async def train_models_now_progress(
+    job_id: Optional[str] = None,
+    _user=Depends(require_min_role("admin")),
+) -> dict:
     """
     Poll training progress for the active manual job.
     """

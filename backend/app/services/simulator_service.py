@@ -8,6 +8,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import hash_password, normalize_username
 from app.models import Appliance, BatteryReading, LoadReading, PvReading, User
 
 # Simulator lives at project root (smart-microgrid-manager/simulator). Run backend with:
@@ -16,6 +17,28 @@ from simulator.simulator import HardwareSimulator, default_appliances
 
 
 _simulator: Optional[HardwareSimulator] = None
+
+
+DEFAULT_DEV_USERS = (
+    {
+        "name": "Default User",
+        "username": "admin",
+        "role": "admin",
+        "password": "admin123",
+    },
+    {
+        "name": "Site operator",
+        "username": "operator",
+        "role": "operator",
+        "password": "operator123",
+    },
+    {
+        "name": "Dashboard viewer",
+        "username": "viewer",
+        "role": "viewer",
+        "password": "viewer123",
+    },
+)
 
 
 def get_simulator() -> HardwareSimulator:
@@ -37,7 +60,13 @@ async def ensure_default_user_and_appliances(session: AsyncSession) -> None:
     result = await session.execute(select(User).limit(1))
     if result.scalar_one_or_none() is not None:
         return
-    user = User(name="Default User", role="admin")
+    user = User(
+        name="Default User",
+        username="admin",
+        password_hash=hash_password("admin123"),
+        is_active=True,
+        role="admin",
+    )
     session.add(user)
     await session.flush()
     ext_id_to_priority = {a["id"]: a["priority"] for a in default_appliances()}
@@ -55,13 +84,58 @@ async def ensure_default_user_and_appliances(session: AsyncSession) -> None:
 
 async def ensure_demo_role_users(session: AsyncSession) -> None:
     """Add viewer/operator accounts for role-based UI (idempotent by display name)."""
-    for name, role in (
-        ("Dashboard viewer", "viewer"),
-        ("Site operator", "operator"),
-    ):
-        r = await session.execute(select(User).where(User.name == name))
+    for spec in DEFAULT_DEV_USERS[1:]:
+        r = await session.execute(select(User).where(User.name == spec["name"]))
         if r.scalar_one_or_none() is None:
-            session.add(User(name=name, role=role))
+            session.add(
+                User(
+                    name=spec["name"],
+                    username=spec["username"],
+                    password_hash=hash_password(spec["password"]),
+                    is_active=True,
+                    role=spec["role"],
+                )
+            )
+    await session.flush()
+
+
+async def ensure_auth_seed_users(session: AsyncSession) -> None:
+    """
+    Backfill usernames/passwords for seeded dev users and make legacy rows usable.
+    """
+    rows = list((await session.execute(select(User).order_by(User.id))).scalars().all())
+    claimed_usernames = {u.username for u in rows if u.username}
+
+    def unique_username(base: str) -> str:
+        candidate = normalize_username(base) or "user"
+        if candidate not in claimed_usernames:
+            claimed_usernames.add(candidate)
+            return candidate
+        i = 2
+        while f"{candidate}{i}" in claimed_usernames:
+            i += 1
+        resolved = f"{candidate}{i}"
+        claimed_usernames.add(resolved)
+        return resolved
+
+    for user in rows:
+        matched = next((spec for spec in DEFAULT_DEV_USERS if spec["name"] == user.name), None)
+        if matched is not None:
+            if not user.username:
+                user.username = matched["username"]
+            claimed_usernames.add(user.username)
+            if not user.password_hash:
+                user.password_hash = hash_password(matched["password"])
+            if user.is_active is None:
+                user.is_active = True
+            continue
+
+        if not user.username:
+            user.username = unique_username(user.name.replace(" ", "_"))
+        if not user.password_hash:
+            user.password_hash = hash_password(f"{user.username}123")
+        if user.is_active is None:
+            user.is_active = True
     await session.flush()
 
 

@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     weather_pv_capacity_kw: float = 1.0
     # Multiply (shortwave_W/m² / 1000) * capacity; accounts for inverter + mismatch (~0.85 typical).
     weather_panel_derate: float = 0.85
+    # Authentication
+    auth_session_cookie_name: str = "smart_microgrid_session"
+    auth_session_ttl_hours: int = 24
+    auth_password_iterations: int = 390000
+    auth_cookie_secure: bool = False
     # Logging
     log_level: str = "INFO"  # DEBUG/INFO/WARNING/ERROR
     log_access: bool = True  # log request method/path/status/duration
@@ -37,6 +42,7 @@ class Settings(BaseSettings):
     class Config:
         env_prefix = "MICROGRID_"
         env_file = ".env"
+        extra = "ignore"
 
 
 settings = Settings()

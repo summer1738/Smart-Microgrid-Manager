@@ -1,110 +1,114 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
+import AuthShell from '../components/AuthShell'
+import PasswordField from '../components/PasswordField'
 import { useAuth } from '../context/AuthContext'
 
-const ROLE_HELP = {
-  viewer: 'Dashboard, weather, and forecast — read-focused.',
-  operator: 'Adds appliances, schedule, and hardware monitoring.',
-  admin: 'Full access including settings, training, and model tools.',
-}
+const DEV_ACCOUNTS = [
+  { label: 'Admin', username: 'admin', password: 'admin123' },
+  { label: 'Operator', username: 'operator', password: 'operator123' },
+  { label: 'Viewer', username: 'viewer', password: 'viewer123' },
+]
 
-export default function Login({ api }) {
-  const { user, setUser, ready } = useAuth()
-  const [users, setUsers] = useState([])
-  const [selectedId, setSelectedId] = useState('')
+export default function Login() {
+  const { user, login, ready } = useAuth()
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(null)
   const navigate = useNavigate()
 
   useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const r = await fetch(`${api}/users`)
-        if (!r.ok) throw new Error(r.statusText)
-        const list = await r.json()
-        if (!cancelled && Array.isArray(list)) {
-          setUsers(list)
-          if (list.length && !selectedId) {
-            setSelectedId(String(list[0].id))
-          }
-        }
-      } catch (e) {
-        if (!cancelled) setError(e.message || 'Could not load users')
-      }
-    }
-    if (ready && !user) load()
-    return () => {
-      cancelled = true
-    }
-  }, [api, ready, user, selectedId])
+    setError(null)
+  }, [username, password])
 
   if (ready && user) {
     return <Navigate to="/" replace />
   }
 
-  const onSubmit = (e) => {
-    e.preventDefault()
-    const id = Number(selectedId)
-    const u = users.find((x) => x.id === id)
-    if (!u) return
-    setUser(u)
-    navigate('/', { replace: true })
+  const canSubmit = username.trim().length > 0 && password.length > 0 && !submitting
+
+  const onSubmit = async (event) => {
+    event.preventDefault()
+    if (!canSubmit) return
+    setSubmitting(true)
+    try {
+      await login({ username: username.trim(), password })
+      navigate('/', { replace: true })
+    } catch (caught) {
+      setError(caught.message || 'Could not sign in')
+      setSubmitting(false)
+    }
+  }
+
+  const fillDevelopmentAccount = (account) => {
+    setUsername(account.username)
+    setPassword(account.password)
   }
 
   return (
-    <div style={{ maxWidth: 420, margin: '3rem auto', padding: '0 1rem' }}>
-      <h1 style={{ fontSize: '1.35rem', marginBottom: '0.5rem', color: '#f1f5f9' }}>Sign in</h1>
-      <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '1.25rem', lineHeight: 1.5 }}>
-        Choose a role to open the matching screens. This is a demo gate (no password); add real authentication before
-        production.
-      </p>
-      {error && <p style={{ color: '#f87171', marginBottom: '1rem' }}>{error}</p>}
-      <form
-        onSubmit={onSubmit}
-        style={{ background: '#1e293b', padding: '1.25rem', borderRadius: 8, border: '1px solid #334155' }}
-      >
-        <label style={{ display: 'block', fontSize: '0.85rem', color: '#94a3b8', marginBottom: 6 }}>User</label>
-        <select
-          value={selectedId}
-          onChange={(e) => setSelectedId(e.target.value)}
-          style={{
-            width: '100%',
-            padding: '0.6rem 0.5rem',
-            borderRadius: 6,
-            border: '1px solid #475569',
-            background: '#0f172a',
-            color: '#e2e8f0',
-            marginBottom: '1rem',
-          }}
-        >
-          {users.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.name} ({u.role})
-            </option>
-          ))}
-        </select>
-        {selectedId && (
-          <p style={{ fontSize: '0.82rem', color: '#64748b', marginTop: -8, marginBottom: '1rem', lineHeight: 1.45 }}>
-            {ROLE_HELP[users.find((x) => String(x.id) === selectedId)?.role] || ''}
-          </p>
-        )}
-        <button
-          type="submit"
-          disabled={!users.length}
-          style={{
-            width: '100%',
-            padding: '0.65rem',
-            borderRadius: 6,
-            border: 'none',
-            background: users.length ? '#0ea5e9' : '#475569',
-            color: '#0f172a',
-            fontWeight: 600,
-            cursor: users.length ? 'pointer' : 'not-allowed',
-          }}
-        >
-          Continue
+    <AuthShell
+      panelTitle="Sign in"
+      panelCopy="Use your account to open the live dashboard, scheduling tools, and system controls."
+      switchPrompt="Need an account?"
+      switchLabel="Create one"
+      switchTo="/signup"
+      footer={
+        <>
+          <div className="auth-card__footerTitle">Seeded development accounts</div>
+          <div className="auth-demoGrid">
+            {DEV_ACCOUNTS.map((account) => (
+              <button
+                key={account.username}
+                type="button"
+                className="auth-demoButton"
+                onClick={() => fillDevelopmentAccount(account)}
+              >
+                <span>{account.label}</span>
+                <strong>{account.username}</strong>
+              </button>
+            ))}
+          </div>
+          <p className="auth-card__footerNote">Tap one to fill the form for local testing.</p>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit} className="auth-form">
+        {error ? (
+          <div className="auth-form__message" role="alert">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="auth-form__field">
+          <label htmlFor="username" className="auth-form__label">
+            Username
+          </label>
+          <input
+            id="username"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            autoComplete="username"
+            placeholder="admin"
+            className="auth-form__input"
+            disabled={submitting}
+          />
+        </div>
+
+        <PasswordField
+          id="password"
+          label="Password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          autoComplete="current-password"
+          placeholder="Enter your password"
+          disabled={submitting}
+        />
+
+        <button type="submit" className="auth-form__submit" disabled={!canSubmit}>
+          {submitting ? 'Signing in...' : 'Continue to dashboard'}
         </button>
       </form>
-    </div>
+    </AuthShell>
   )
 }

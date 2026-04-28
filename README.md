@@ -30,6 +30,19 @@ Backend: http://localhost:8001
 API docs: http://localhost:8001/docs  
 Web UI: http://localhost:5173 (or port shown by Vite)
 
+### Development sign-in
+
+The web UI now uses real username/password authentication with a server-side session cookie. On a fresh database, these development accounts are seeded automatically:
+
+- `admin` / `admin123`
+- `operator` / `operator123`
+- `viewer` / `viewer123`
+
+The backend now enforces the same role gates as the UI:
+- `viewer`: Dashboard, Forecast, Weather
+- `operator`: adds Appliances, Hardware, Schedule
+- `admin`: adds Training, Model monitor, Settings
+
 By default, the backend starts a **background controller loop** (simulation mode) that:
 - applies the IEBA schedule for “now”
 - advances the simulator every `MICROGRID_SIMULATOR_INTERVAL_SECONDS` (default 60s)

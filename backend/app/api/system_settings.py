@@ -3,10 +3,15 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_min_role
 from app.database import get_db
 from app.services.system_settings_service import ensure_system_settings_row
 
-router = APIRouter(prefix="/system", tags=["system"])
+router = APIRouter(
+    prefix="/system",
+    tags=["system"],
+    dependencies=[Depends(require_min_role("admin"))],
+)
 
 
 class SystemSettingsOut(BaseModel):

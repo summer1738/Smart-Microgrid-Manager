@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import { roleMeetsMin } from './auth/roles'
 import RequireRole from './components/RequireRole'
 import Login from './pages/Login'
+import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 import Appliances from './pages/Appliances'
 import Forecast from './pages/Forecast'
@@ -23,8 +24,8 @@ function Nav() {
   if (!user) return null
 
   const linkStyle = { color: '#cbd5e1', textDecoration: 'none' }
-  const onLogout = () => {
-    logout()
+  const onLogout = async () => {
+    await logout()
     navigate('/login', { replace: true })
   }
 
@@ -145,7 +146,8 @@ export default function App() {
       <AuthProvider api={API}>
         <BrowserRouter>
           <Routes>
-            <Route path="/login" element={<Login api={API} />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
             <Route element={<AppShell />}>
               <Route path="/" element={<RequireRole minRole="viewer"><Dashboard api={API} /></RequireRole>} />
               <Route
