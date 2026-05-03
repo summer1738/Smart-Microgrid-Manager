@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { HorizontalBarChart } from '../components/Charts'
+import { apiFetch } from '../utils/api'
 
 function ToggleSwitch({ checked, onChange, label }) {
   return (
@@ -98,7 +99,7 @@ export default function Appliances({ api }) {
 
   const fetchList = async () => {
     try {
-      const r = await fetch(`${api}/appliances`)
+      const r = await apiFetch(`${api}/appliances`)
       if (!r.ok) throw new Error(r.statusText)
       const data = await r.json()
       setList(data)
@@ -121,7 +122,7 @@ export default function Appliances({ api }) {
         form.run_mode === 'preferred_times'
           ? JSON.stringify({ mode: 'preferred_times', hard: !!form.hard, windows: form.windows })
           : JSON.stringify({ mode: 'max_possible' })
-      const r = await fetch(`${api}/appliances`, {
+      const r = await apiFetch(`${api}/appliances`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -185,7 +186,7 @@ export default function Appliances({ api }) {
         editForm.run_mode === 'preferred_times'
           ? JSON.stringify({ mode: 'preferred_times', hard: !!editForm.hard, windows: editForm.windows })
           : JSON.stringify({ mode: 'max_possible' })
-      const r = await fetch(`${api}/appliances/${id}`, {
+      const r = await apiFetch(`${api}/appliances/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -213,7 +214,7 @@ export default function Appliances({ api }) {
     setRunRequestResult(null)
     try {
       const requestedMinutes = durationMinutes || appliance.default_run_minutes || 30
-      const r = await fetch(`${api}/appliances/${appliance.id}/request-run`, {
+      const r = await apiFetch(`${api}/appliances/${appliance.id}/request-run`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ duration_minutes: requestedMinutes }),
@@ -236,7 +237,7 @@ export default function Appliances({ api }) {
   const deleteAppliance = async (id) => {
     if (!window.confirm('Delete this appliance?')) return
     try {
-      const r = await fetch(`${api}/appliances/${id}`, { method: 'DELETE' })
+      const r = await apiFetch(`${api}/appliances/${id}`, { method: 'DELETE' })
       if (!r.ok && r.status !== 204) {
         const err = await r.json().catch(() => ({}))
         throw new Error(err.detail || r.statusText)

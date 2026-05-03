@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
+import { apiFetch } from '../utils/api'
 
 function ToggleSwitch({ checked, onChange, disabled = false }) {
   return (
@@ -65,7 +66,7 @@ export default function Training({ api }) {
 
   const loadStatus = useCallback(() => {
     setStatusErr(null)
-    return fetch(`${api}/forecast/training-status`)
+    return apiFetch(`${api}/forecast/training-status`)
       .then((r) => {
         if (!r.ok) throw new Error(r.statusText)
         return r.json()
@@ -95,7 +96,7 @@ export default function Training({ api }) {
     setJobId(null)
     setJobPolling(false)
     try {
-      const r = await fetch(`${api}/forecast/monitor/train-now-async`, { method: 'POST' })
+      const r = await apiFetch(`${api}/forecast/monitor/train-now-async`, { method: 'POST' })
       const j = await r.json()
       if (!r.ok || !j.job_id) throw new Error(j?.message || 'Failed to start training job')
       setActiveJob(j)
@@ -118,7 +119,7 @@ export default function Training({ api }) {
     let cancelled = false
     const id = setInterval(async () => {
       try {
-        const r = await fetch(`${api}/forecast/monitor/train-now-progress?job_id=${jobId}`)
+        const r = await apiFetch(`${api}/forecast/monitor/train-now-progress?job_id=${jobId}`)
         const j = await r.json()
         if (cancelled) return
         setActiveJob(j)
@@ -146,7 +147,7 @@ export default function Training({ api }) {
     setAutoSaving(true)
     setStatusErr(null)
     try {
-      const r = await fetch(`${api}/system/settings`, {
+      const r = await apiFetch(`${api}/system/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ auto_train_enabled: enabled }),

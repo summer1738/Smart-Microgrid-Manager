@@ -40,7 +40,11 @@ async def apply_schedule(session: AsyncSession, now: Optional[datetime] = None) 
     active_slots: list[ScheduleSlot] = []
     seen_appliance_ids: set[int] = set()
     for slot in slots:
-        if slot.end_ts <= now:
+        # Ensure slot.end_ts is timezone-aware for comparison
+        end_ts = slot.end_ts
+        if end_ts.tzinfo is None:
+            end_ts = end_ts.replace(tzinfo=timezone.utc)
+        if end_ts <= now:
             slot.status = "skipped"
             continue
         if slot.appliance_id in seen_appliance_ids:

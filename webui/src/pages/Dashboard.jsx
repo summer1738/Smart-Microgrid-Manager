@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { MultiLineChart, DonutChart, HorizontalBarChart } from '../components/Charts'
 import { MqttStatusTooltip } from '../components/MqttStatusTooltip'
 import { useAppSettings } from '../context/AppSettingsContext'
+import { apiFetch } from '../utils/api'
 import { getMqttBadge } from '../utils/mqttStatus'
 
 function downsample(points, max = 120) {
@@ -24,7 +25,7 @@ export default function Dashboard({ api }) {
   const [error, setError] = useState(null)
 
   const fetchHistory = () => {
-    fetch(`${api}/status/history?hours=24`)
+    apiFetch(`${api}/status/history?hours=24`)
       .then((r) => r.json())
       .then(setHistory)
       .catch(() => setHistory({ points: [] }))
@@ -34,7 +35,7 @@ export default function Dashboard({ api }) {
     let cancelled = false
     async function fetchStatus() {
       try {
-        const r = await fetch(`${api}/status`)
+        const r = await apiFetch(`${api}/status`)
         if (!r.ok) throw new Error(r.statusText)
         const data = await r.json()
         if (!cancelled) setStatus(data)
@@ -46,7 +47,7 @@ export default function Dashboard({ api }) {
     }
     async function fetchMqttHealth() {
       try {
-        const r = await fetch(`${api}/health/mqtt`)
+        const r = await apiFetch(`${api}/health/mqtt`)
         if (!r.ok) throw new Error(r.statusText)
         const data = await r.json()
         if (!cancelled) setMqttHealth(data)
@@ -287,4 +288,3 @@ function Card({ title, value, sub }) {
     </div>
   )
 }
-

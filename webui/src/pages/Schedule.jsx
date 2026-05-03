@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { ScheduleHeatmap, buildScheduleMatrix } from '../components/Charts'
+import { apiFetch } from '../utils/api'
 
 export default function Schedule({ api }) {
   const [data, setData] = useState(null)
@@ -7,7 +8,7 @@ export default function Schedule({ api }) {
   const [running, setRunning] = useState(false)
 
   const fetchSchedule = () => {
-    fetch(`${api}/schedule`)
+    apiFetch(`${api}/schedule`)
       .then((r) => r.json())
       .then(setData)
       .finally(() => setLoading(false))
@@ -26,7 +27,7 @@ export default function Schedule({ api }) {
 
   const runIeba = () => {
     setRunning(true)
-    fetch(`${api}/schedule/run`, { method: 'POST' })
+    apiFetch(`${api}/schedule/run`, { method: 'POST' })
       .then((r) => r.json())
       .then(setData)
       .catch(() => setData({ slots: [], message: 'Run failed.' }))
@@ -34,7 +35,7 @@ export default function Schedule({ api }) {
   }
 
   const applyNow = () => {
-    fetch(`${api}/schedule/apply`, { method: 'POST' })
+    apiFetch(`${api}/schedule/apply`, { method: 'POST' })
       .then((r) => r.json())
       .then((res) => alert(`Applied: ${res.slots_applied} slots, ${res.appliances_updated} appliances updated.`))
       .catch(() => alert('Apply failed.'))

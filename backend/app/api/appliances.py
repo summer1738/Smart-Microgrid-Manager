@@ -8,13 +8,18 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, desc, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_min_role
 from app.database import get_db
 from app.models import Appliance, BatteryReading, LoadReading, PvReading, ScheduleSlot
 from app.schemas import ApplianceCreate, ApplianceOut, ApplianceRunDecisionOut, ApplianceRunRequest, ApplianceUpdate
 from app.services.forecast_service import generate_hybrid_forecast
 from app.services.system_settings_service import ensure_system_settings_row
 
-router = APIRouter(prefix="/appliances", tags=["appliances"])
+router = APIRouter(
+    prefix="/appliances",
+    tags=["appliances"],
+    dependencies=[Depends(require_min_role("operator"))],
+)
 
 
 async def _recommend_start_time(

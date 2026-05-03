@@ -25,7 +25,24 @@ def _run_lightweight_migrations(sync_conn) -> None:
     Lightweight additive migrations for existing MySQL tables.
     """
     insp = inspect(sync_conn)
-    if "appliances" not in insp.get_table_names():
+    tables = insp.get_table_names()
+    if "users" in tables:
+        user_cols = {c["name"] for c in insp.get_columns("users")}
+        if "username" not in user_cols:
+            sync_conn.exec_driver_sql("ALTER TABLE users ADD COLUMN username VARCHAR(64) NULL")
+        if "password_hash" not in user_cols:
+            sync_conn.exec_driver_sql("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL")
+        if "is_active" not in user_cols:
+            sync_conn.exec_driver_sql("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE")
+        user_indexes = {idx["name"] for idx in insp.get_indexes("users")}
+        user_unique_constraints = {
+            tuple(col for col in constraint.get("column_names", []) if col)
+            for constraint in insp.get_unique_constraints("users")
+        }
+        if "ix_users_username" not in user_indexes and ("username",) not in user_unique_constraints:
+            sync_conn.exec_driver_sql("CREATE UNIQUE INDEX ix_users_username ON users (username)")
+
+    if "appliances" not in tables:
         return
     cols = {c["name"] for c in insp.get_columns("appliances")}
     if "usage_mode" not in cols:

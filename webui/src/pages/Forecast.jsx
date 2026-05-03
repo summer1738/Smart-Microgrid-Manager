@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
 import { MultiLineChart } from '../components/Charts'
+import { apiFetch } from '../utils/api'
 
 export default function Forecast({ api }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch(`${api}/forecast?horizon_hours=24`)
+    apiFetch(`${api}/forecast?horizon_hours=24`)
       .then((r) => r.json())
       .then(setData)
       .finally(() => setLoading(false))

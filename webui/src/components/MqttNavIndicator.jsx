@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useAppSettings } from '../context/AppSettingsContext'
+import { apiFetch } from '../utils/api'
 import { getMqttBadge } from '../utils/mqttStatus'
 import { MqttStatusTooltip } from './MqttStatusTooltip'
 
@@ -16,7 +17,7 @@ export default function MqttNavIndicator() {
     let cancelled = false
     async function fetchHealth() {
       try {
-        const r = await fetch(`${API}/health/mqtt`)
+        const r = await apiFetch(`${API}/health/mqtt`)
         if (!r.ok) throw new Error('bad status')
         const data = await r.json()
         if (!cancelled) setMqttHealth(data)

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_min_role
 from app.database import get_db
 from app.models import Appliance, BatteryReading, ScheduleSlot
 from app.schemas import ScheduleOut, ScheduleSlotOut
@@ -14,7 +15,11 @@ from app.services.ieba_service import run_ieba
 from app.services.schedule_executor_service import apply_schedule
 from app.services.system_settings_service import ensure_system_settings_row
 
-router = APIRouter(prefix="/schedule", tags=["schedule"])
+router = APIRouter(
+    prefix="/schedule",
+    tags=["schedule"],
+    dependencies=[Depends(require_min_role("operator"))],
+)
 
 HORIZON_HOURS = 24
 RESOLUTION_HOURS = 1.0

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_min_role
 from app.config import settings
 from app.database import get_db
 from app.models import Appliance, BatteryReading, LoadReading, PvReading
@@ -12,7 +13,11 @@ from app.schemas import BatterySnapshot, HistoryPoint, LoadSnapshot, PvSnapshot,
 from app.services.schedule_executor_service import apply_schedule
 from app.services.simulator_service import tick_simulator_and_persist
 
-router = APIRouter(prefix="/status", tags=["status"])
+router = APIRouter(
+    prefix="/status",
+    tags=["status"],
+    dependencies=[Depends(require_min_role("viewer"))],
+)
 
 
 FULL_BATTERY_SOC_PERCENT = 99.5

@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_min_role
 from app.config import settings
 from app.database import get_db
 from app.models import BatteryReading, LoadReading, PvReading
@@ -23,7 +24,11 @@ from app.services.system_settings_service import get_auto_train_enabled
 from app.services.auto_train_service import get_last_train_result
 from app.services.weather_insights_service import build_weather_pv_insights
 
-router = APIRouter(prefix="/forecast", tags=["forecast"])
+router = APIRouter(
+    prefix="/forecast",
+    tags=["forecast"],
+    dependencies=[Depends(require_min_role("viewer"))],
+)
 
 
 def _compute_live_metrics(
@@ -86,7 +91,7 @@ async def get_generation_long_range(
     return await generate_long_range_generation_forecast(forecast_days=forecast_days)
 
 
-@router.get("/training-status")
+@router.get("/training-status", dependencies=[Depends(require_min_role("admin"))])
 async def get_training_status(db: AsyncSession = Depends(get_db)) -> dict:
     """
     Preconditions for UI-driven LSTM training: DB sample count, PyTorch, scheduled auto-train flag.
@@ -144,7 +149,7 @@ async def get_forecast(horizon_hours: int = 24) -> ForecastOut:
     )
 
 
-@router.get("/monitor", response_model=ModelMonitorOut)
+@router.get("/monitor", response_model=ModelMonitorOut, dependencies=[Depends(require_min_role("admin"))])
 async def get_model_monitor(
     horizon_hours: int = 24,
     compare: bool = False,
@@ -291,7 +296,7 @@ async def get_model_monitor(
     )
 
 
-@router.post("/monitor/train-now")
+@router.post("/monitor/train-now", dependencies=[Depends(require_min_role("admin"))])
 async def train_models_now() -> dict:
     """
     Trigger one immediate training attempt (same logic as auto-train loop).
@@ -310,7 +315,7 @@ async def train_models_now() -> dict:
     return {"ok": bool(res.ok), "message": res.message, "output": tail}
 
 
-@router.post("/monitor/train-now-async")
+@router.post("/monitor/train-now-async", dependencies=[Depends(require_min_role("admin"))])
 async def train_models_now_async() -> dict:
     """
     Start training in the background with step + streaming log tail progress.
@@ -328,7 +333,7 @@ async def train_models_now_async() -> dict:
     return {"ok": True, **job}
 
 
-@router.get("/monitor/train-now-progress")
+@router.get("/monitor/train-now-progress", dependencies=[Depends(require_min_role("admin"))])
 async def train_models_now_progress(job_id: Optional[str] = None) -> dict:
     """
     Poll training progress for the active manual job.

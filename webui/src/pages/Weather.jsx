@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { MultiLineChart } from '../components/Charts'
+import { apiFetch } from '../utils/api'
 
 function shortDate(iso) {
   if (!iso) return ''
@@ -17,11 +18,11 @@ export default function Weather({ api }) {
   useEffect(() => {
     let cancelled = false
     Promise.all([
-      fetch(`${api}/forecast/weather-insights?forecast_days=16&history_days=30`).then((r) => {
+      apiFetch(`${api}/forecast/weather-insights?forecast_days=16&history_days=30`).then((r) => {
         if (!r.ok) throw new Error(r.statusText)
         return r.json()
       }),
-      fetch(`${api}/forecast/generation-long-range?forecast_days=16`).then((r) => {
+      apiFetch(`${api}/forecast/generation-long-range?forecast_days=16`).then((r) => {
         if (!r.ok) throw new Error(r.statusText)
         return r.json()
       }),

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { MultiLineChart } from '../components/Charts'
+import { apiFetch } from '../utils/api'
 
 function Badge({ ok, label }) {
   return (
@@ -31,7 +32,7 @@ export default function ModelMonitor({ api }) {
   const [lastFetch, setLastFetch] = useState(null)
   const load = useCallback(() => {
     setErr(null)
-    fetch(`${api}/forecast/monitor?horizon_hours=24&compare=true`)
+    apiFetch(`${api}/forecast/monitor?horizon_hours=24&compare=true`)
       .then((r) => {
         if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
         return r.json()

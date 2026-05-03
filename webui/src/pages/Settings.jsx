@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAppSettings } from '../context/AppSettingsContext'
+import { apiFetch } from '../utils/api'
 
 function ToggleSwitch({ checked, onChange, disabled = false }) {
   return (
@@ -142,7 +143,7 @@ export default function Settings({ api }) {
     let cancelled = false
     setServerLoading(true)
     setServerError(null)
-    fetch(`${api}/system/settings`)
+    apiFetch(`${api}/system/settings`)
       .then((r) => {
         if (!r.ok) throw new Error(r.statusText)
         return r.json()
@@ -175,7 +176,7 @@ export default function Settings({ api }) {
     setServerSaving(true)
     setServerError(null)
     try {
-      const r = await fetch(`${api}/system/settings`, {
+      const r = await apiFetch(`${api}/system/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ auto_train_enabled: enabled }),
@@ -205,7 +206,7 @@ export default function Settings({ api }) {
         battery_capacity_kwh: Number(serverBatteryKwh),
         soc_min_percent: Number(serverSocMin),
       }
-      const r = await fetch(`${api}/system/settings`, {
+      const r = await apiFetch(`${api}/system/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
