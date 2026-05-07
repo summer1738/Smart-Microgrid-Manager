@@ -1,15 +1,32 @@
 import { useState, useEffect, useMemo } from 'react'
 import { MultiLineChart } from '../components/Charts'
+import InsightPanel from '../components/InsightPanel'
 import { apiFetch } from '../utils/api'
 
 export default function Forecast({ api }) {
   const [data, setData] = useState(null)
+  const [insights, setInsights] = useState(null)
+  const [insightError, setInsightError] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    apiFetch(`${api}/forecast?horizon_hours=24`)
-      .then((r) => r.json())
-      .then(setData)
+    Promise.allSettled([
+      apiFetch(`${api}/forecast?horizon_hours=24`).then((r) => r.json()),
+      apiFetch(`${api}/forecast/insights?horizon_hours=24`).then(async (r) => {
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`)
+        return r.json()
+      }),
+    ])
+      .then(([forecastResult, insightResult]) => {
+        if (forecastResult.status === 'fulfilled') {
+          setData(forecastResult.value)
+        }
+        if (insightResult.status === 'fulfilled') {
+          setInsights(insightResult.value)
+        } else if (insightResult.reason) {
+          setInsightError(String(insightResult.reason.message || insightResult.reason))
+        }
+      })
       .finally(() => setLoading(false))
   }, [api])
 
@@ -42,6 +59,19 @@ export default function Forecast({ api }) {
         Generated at: {data.generated_at ? new Date(data.generated_at).toLocaleString() : '–'} · Horizon: {data.horizon_hours} h
       </p>
       {data.message && <p style={{ background: '#1e293b', padding: '0.5rem 0.75rem', borderRadius: 6 }}>{data.message}</p>}
+      {insights && (
+        <InsightPanel
+          title="AI forecast insights"
+          summary={insights.summary}
+          insights={insights.insights}
+          footnote="These explanations are generated from forecast curves, Open-Meteo weather context, live SOC, and the upcoming IEBA schedule."
+        />
+      )}
+      {insightError && (
+        <p style={{ marginTop: '0.75rem', color: '#fbbf24' }}>
+          Insight panel unavailable: {insightError}
+        </p>
+      )}
 
       {lineData && lineData.gen.length > 0 && (
         <section style={{ marginTop: '1.5rem' }}>

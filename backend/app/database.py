@@ -53,6 +53,21 @@ def _run_lightweight_migrations(sync_conn) -> None:
         sync_conn.exec_driver_sql(
             "ALTER TABLE appliances ADD COLUMN default_run_minutes INTEGER NOT NULL DEFAULT 30"
         )
+    if "manual_override_active" not in cols:
+        sync_conn.exec_driver_sql(
+            "ALTER TABLE appliances ADD COLUMN manual_override_active BOOLEAN NOT NULL DEFAULT FALSE"
+        )
+
+    if "system_settings" in tables:
+        sys_cols = {c["name"] for c in insp.get_columns("system_settings")}
+        if "auto_ieba_enabled" not in sys_cols:
+            sync_conn.exec_driver_sql(
+                "ALTER TABLE system_settings ADD COLUMN auto_ieba_enabled BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        if "auto_ieba_interval_minutes" not in sys_cols:
+            sync_conn.exec_driver_sql(
+                "ALTER TABLE system_settings ADD COLUMN auto_ieba_interval_minutes INTEGER NOT NULL DEFAULT 60"
+            )
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

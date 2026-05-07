@@ -2,7 +2,7 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_min_role
@@ -18,6 +18,8 @@ router = APIRouter(
 
 class SystemSettingsOut(BaseModel):
     auto_train_enabled: bool
+    auto_ieba_enabled: bool
+    auto_ieba_interval_minutes: int
     weather_forecast_enabled: bool
     weather_latitude: float
     weather_longitude: float
@@ -30,6 +32,8 @@ class SystemSettingsOut(BaseModel):
 
 class SystemSettingsPatch(BaseModel):
     auto_train_enabled: Optional[bool] = None
+    auto_ieba_enabled: Optional[bool] = None
+    auto_ieba_interval_minutes: Optional[int] = Field(None, ge=1, le=1440)
     weather_forecast_enabled: Optional[bool] = None
     weather_latitude: Optional[float] = None
     weather_longitude: Optional[float] = None
@@ -45,6 +49,8 @@ async def get_system_settings(db: AsyncSession = Depends(get_db)) -> SystemSetti
     row = await ensure_system_settings_row(db)
     return SystemSettingsOut(
         auto_train_enabled=bool(row.auto_train_enabled),
+        auto_ieba_enabled=bool(row.auto_ieba_enabled),
+        auto_ieba_interval_minutes=int(row.auto_ieba_interval_minutes),
         weather_forecast_enabled=bool(row.weather_forecast_enabled),
         weather_latitude=float(row.weather_latitude),
         weather_longitude=float(row.weather_longitude),
@@ -69,6 +75,8 @@ async def put_system_settings(
     await db.refresh(row)
     return SystemSettingsOut(
         auto_train_enabled=bool(row.auto_train_enabled),
+        auto_ieba_enabled=bool(row.auto_ieba_enabled),
+        auto_ieba_interval_minutes=int(row.auto_ieba_interval_minutes),
         weather_forecast_enabled=bool(row.weather_forecast_enabled),
         weather_latitude=float(row.weather_latitude),
         weather_longitude=float(row.weather_longitude),

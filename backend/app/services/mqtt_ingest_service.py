@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import async_session
-from app.models import Appliance, BatteryReading, LoadReading, PvReading
+from app.models import Appliance, BatteryReading, LoadReading, PvReading, TempHumidityReading, LightReading
 from app.services.mqtt_topics import (
     ack_relay_topic,
     command_relay_topic,
@@ -138,6 +138,31 @@ async def publish_relay_command(appliance_external_id: str, is_on: bool) -> None
     await asyncio.to_thread(_publish_once)
 
 
+async def _persist_temp_humidity(payload: dict[str, Any]) -> None:
+    ts = _parse_ts(payload)
+    async with async_session() as session:
+        session.add(
+            TempHumidityReading(
+                timestamp=ts,
+                temp_c=float(payload.get("temp_c", 0.0)),
+                humidity_percent=float(payload.get("humidity_percent", 0.0)),
+            )
+        )
+        await session.commit()
+
+
+async def _persist_light(payload: dict[str, Any]) -> None:
+    ts = _parse_ts(payload)
+    async with async_session() as session:
+        session.add(
+            LightReading(
+                timestamp=ts,
+                is_sunny=bool(payload.get("is_sunny", False)),
+            )
+        )
+        await session.commit()
+
+
 class MqttIngestLoop:
     """Subscribe to sensor topics and persist incoming telemetry."""
 
@@ -150,13 +175,18 @@ class MqttIngestLoop:
         self._seen_first_load_ids: set[str] = set()
 
     @staticmethod
-    def _subscription_topics(prefix: str) -> list[tuple[str, int]]:
+    def get_sensor_topics(prefix: str) -> list[tuple[str, int]]:
         return [
             (sensor_pv_topic(prefix), 1),
             (sensor_battery_topic(prefix), 1),
             (f"{prefix}/sensors/load/+", 1),
+            (f"{prefix}/sensors/temp_humidity", 1),
+            (f"{prefix}/sensors/light", 1),
             (f"{prefix}/ack/relay/+", 0),
         ]
+
+    def _subscription_topics(self, prefix: str) -> list[tuple[str, int]]:
+        return self.get_sensor_topics(prefix)
 
     async def start(self) -> None:
         if self._running or mqtt is None:
@@ -174,7 +204,12 @@ class MqttIngestLoop:
         self._client = client
         self._running = True
         _mqtt_health["running"] = True
-        log.info("MQTT ingest started host=%s port=%s prefix=%s", settings.mqtt_host, settings.mqtt_port, settings.mqtt_topic_prefix)
+        log.info(
+            "MQTT ingest started host=%s port=%s prefix=%s",
+            settings.mqtt_host,
+            settings.mqtt_port,
+            settings.mqtt_topic_prefix,
+        )
 
     async def stop(self) -> None:
         if not self._running or self._client is None:
@@ -225,6 +260,12 @@ class MqttIngestLoop:
                 log.info("MQTT first battery telemetry received on %s (gateway online)", topic)
             asyncio.run_coroutine_threadsafe(_persist_battery(payload), self._loop)
             return
+        if topic == f"{prefix}/sensors/temp_humidity":
+            asyncio.run_coroutine_threadsafe(_persist_temp_humidity(payload), self._loop)
+            return
+        if topic == f"{prefix}/sensors/light":
+            asyncio.run_coroutine_threadsafe(_persist_light(payload), self._loop)
+            return
         ext_id = parse_sensor_load_topic(prefix, topic)
         if ext_id is not None:
             _mqtt_health.setdefault("last_load_at", {})
@@ -239,4 +280,3 @@ class MqttIngestLoop:
         if topic.startswith(ack_base):
             _mqtt_health["last_relay_ack_at"] = _now_iso()
             return
-

@@ -16,6 +16,8 @@ async def ensure_system_settings_row(session: AsyncSession) -> SystemSettings:
         row = SystemSettings(
             id=1,
             auto_train_enabled=bool(settings.auto_train_enabled),
+            auto_ieba_enabled=bool(settings.auto_ieba_enabled),
+            auto_ieba_interval_minutes=int(settings.auto_ieba_interval_minutes),
             weather_forecast_enabled=bool(settings.weather_forecast_enabled),
             weather_latitude=float(settings.weather_latitude),
             weather_longitude=float(settings.weather_longitude),
@@ -40,6 +42,21 @@ async def get_auto_train_enabled() -> bool:
             return bool(row.auto_train_enabled)
     except Exception:
         return bool(settings.auto_train_enabled)
+
+
+async def get_auto_ieba_settings() -> dict:
+    try:
+        async with async_session() as session:
+            row = await ensure_system_settings_row(session)
+            return {
+                "auto_ieba_enabled": bool(row.auto_ieba_enabled),
+                "auto_ieba_interval_minutes": int(row.auto_ieba_interval_minutes),
+            }
+    except Exception:
+        return {
+            "auto_ieba_enabled": bool(settings.auto_ieba_enabled),
+            "auto_ieba_interval_minutes": int(settings.auto_ieba_interval_minutes),
+        }
 
 
 async def set_auto_train_enabled(enabled: bool) -> bool:
@@ -68,5 +85,4 @@ async def get_microgrid_sizing_settings(session: AsyncSession) -> dict:
         "battery_capacity_kwh": float(row.battery_capacity_kwh),
         "soc_min_percent": float(row.soc_min_percent),
     }
-
 

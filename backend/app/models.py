@@ -51,6 +51,7 @@ class Appliance(Base):
     schedule_prefs: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON: preferred windows
     relay_topic: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     is_on: Mapped[bool] = mapped_column(Boolean, default=True)
+    manual_override_active: Mapped[bool] = mapped_column(Boolean, default=False)
 
     user: Mapped["User"] = relationship("User", back_populates="appliances")
 
@@ -96,13 +97,33 @@ class ScheduleSlot(Base):
     status: Mapped[str] = mapped_column(String(20), default="pending")  # pending / applied / skipped
 
 
+
+# TempHumidityReading model
+class TempHumidityReading(Base):
+    __tablename__ = "temp_humidity_readings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    temp_c: Mapped[float] = mapped_column(Float, nullable=False)
+    humidity_percent: Mapped[float] = mapped_column(Float, nullable=False)
+
+# LightReading model
+class LightReading(Base):
+    __tablename__ = "light_readings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    is_sunny: Mapped[bool] = mapped_column(Boolean, nullable=False)
+
+# SystemSettings model
 class SystemSettings(Base):
     """Single-row persisted settings (id=1). Env vars seed defaults on first run only."""
-
     __tablename__ = "system_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)  # always 1
     auto_train_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_ieba_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_ieba_interval_minutes: Mapped[int] = mapped_column(Integer, default=60)
     weather_forecast_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     weather_latitude: Mapped[float] = mapped_column(Float, default=-17.8)
     weather_longitude: Mapped[float] = mapped_column(Float, default=31.05)

@@ -62,11 +62,14 @@ async def lifespan(app: FastAPI):
     auto_trainer = None
     mqtt_ingest = None
     usb_fallback_bridge = None
-    if settings.use_hardware_simulation and settings.controller_loop_enabled:
+    if settings.controller_loop_enabled:
         from app.services.controller_loop import ControllerLoop
         controller = ControllerLoop()
         await controller.start()
-        log.info("Controller loop started")
+        log.info(
+            "Controller loop started (simulation=%s, auto-ieba setting is DB-controlled)",
+            settings.use_hardware_simulation,
+        )
     if not settings.use_hardware_simulation:
         from app.services.mqtt_ingest_service import MqttIngestLoop
         mqtt_ingest = MqttIngestLoop()
@@ -153,6 +156,7 @@ async def root():
         "status": "/status",
         "appliances": "/appliances",
         "forecast": "/forecast",
+        "forecast_insights": "/forecast/insights",
         "training_status": "/forecast/training-status",
         "weather_insights": "/forecast/weather-insights",
         "schedule": "/schedule",

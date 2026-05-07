@@ -154,6 +154,15 @@ def run_ieba(
             if hard_forbid.get((i, t)):
                 prob += x[i, t] == 0
 
+    # Manual override / fixed-state appliances: keep them locked for the optimization horizon.
+    for i in range(n):
+        fixed_state = app_list[i].get("fixed_state")
+        if fixed_state is None:
+            continue
+        fixed_value = 1 if bool(fixed_state) else 0
+        for t in range(T):
+            prob += x[i, t] == fixed_value
+
     prob.solve(PULP_CBC_CMD(msg=False))
     # 1=Optimal, 0=Not Solved, -1=Infeasible, -2=Unbounded, -3=Undefined, -4=Unbounded
     if prob.status != 1:

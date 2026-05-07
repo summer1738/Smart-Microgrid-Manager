@@ -321,6 +321,25 @@ void publishSensorData() {
   publishBattery();
   publishLoad(EXT_LOAD_1, (relay1State ? 15.0 : 0.0) / 1000.0, relay1State ? "on" : "off");
   publishLoad(EXT_LOAD_2, (relay2State ? 10.0 : 0.0) / 1000.0, relay2State ? "on" : "off");
+
+  // Publish DHT11 temp/humidity
+  StaticJsonDocument<128> dhtDoc;
+  dhtDoc["timestamp"] = getIsoTimestamp();
+  dhtDoc["temp_c"] = currentTemp;
+  dhtDoc["humidity_percent"] = currentHum;
+  String dhtTopic = String(MQTT_PREFIX) + "/sensors/temp_humidity";
+  String dhtJson;
+  serializeJson(dhtDoc, dhtJson);
+  mqttClient.publish(dhtTopic.c_str(), dhtJson.c_str());
+
+  // Publish light sensor
+  StaticJsonDocument<96> lightDoc;
+  lightDoc["timestamp"] = getIsoTimestamp();
+  lightDoc["is_sunny"] = isSunny;
+  String lightTopic = String(MQTT_PREFIX) + "/sensors/light";
+  String lightJson;
+  serializeJson(lightDoc, lightJson);
+  mqttClient.publish(lightTopic.c_str(), lightJson.c_str());
 }
 
 // ===== ISO Timestamp =====

@@ -57,6 +57,8 @@ function ToggleSwitch({ checked, onChange, disabled = false }) {
 export default function Settings({ api }) {
   const { settings, setSettings } = useAppSettings()
   const [serverAutoTrain, setServerAutoTrain] = useState(null)
+  const [serverAutoIeba, setServerAutoIeba] = useState(null)
+  const [serverAutoIebaInterval, setServerAutoIebaInterval] = useState('')
   const [serverWeatherEnabled, setServerWeatherEnabled] = useState(null)
   const [serverLat, setServerLat] = useState('')
   const [serverLon, setServerLon] = useState('')
@@ -151,6 +153,8 @@ export default function Settings({ api }) {
       .then((d) => {
         if (cancelled) return
         setServerAutoTrain(!!d.auto_train_enabled)
+        setServerAutoIeba(!!d.auto_ieba_enabled)
+        setServerAutoIebaInterval(String(d.auto_ieba_interval_minutes ?? '60'))
         setServerWeatherEnabled(!!d.weather_forecast_enabled)
         setServerLat(String(d.weather_latitude ?? ''))
         setServerLon(String(d.weather_longitude ?? ''))
@@ -197,6 +201,8 @@ export default function Settings({ api }) {
     try {
       const payload = {
         auto_train_enabled: !!serverAutoTrain,
+        auto_ieba_enabled: !!serverAutoIeba,
+        auto_ieba_interval_minutes: Number(serverAutoIebaInterval),
         weather_forecast_enabled: !!serverWeatherEnabled,
         weather_latitude: Number(serverLat),
         weather_longitude: Number(serverLon),
@@ -214,6 +220,8 @@ export default function Settings({ api }) {
       if (!r.ok) throw new Error(await r.text())
       const d = await r.json()
       setServerAutoTrain(!!d.auto_train_enabled)
+      setServerAutoIeba(!!d.auto_ieba_enabled)
+      setServerAutoIebaInterval(String(d.auto_ieba_interval_minutes ?? '60'))
       setServerWeatherEnabled(!!d.weather_forecast_enabled)
       setServerLat(String(d.weather_latitude ?? ''))
       setServerLon(String(d.weather_longitude ?? ''))
@@ -271,6 +279,46 @@ export default function Settings({ api }) {
 
         {serverLoading && <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginTop: 10 }}>Loading server settings…</p>}
         {serverError && <p style={{ color: '#f87171', fontSize: '0.9rem', marginTop: 10 }}>{serverError}</p>}
+
+        <div
+          style={{
+            marginTop: '1rem',
+            paddingTop: '1rem',
+            borderTop: '1px solid #334155',
+            display: 'grid',
+            gap: 12,
+          }}
+        >
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 12,
+              cursor: serverSaving ? 'wait' : 'pointer',
+              opacity: serverSaving ? 0.7 : 1,
+            }}
+          >
+            <ToggleSwitch
+              checked={serverAutoIeba === true}
+              disabled={serverSaving || serverLoading}
+              onChange={(val) => setServerAutoIeba(val)}
+            />
+            <span>
+              <strong>Enable automatic IEBA run + apply</strong>
+              <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: 6, lineHeight: 1.45 }}>
+                When on, the backend periodically regenerates the 24-hour IEBA schedule and applies due slots in the
+                background. Manual appliance overrides still win until cleared.
+              </div>
+            </span>
+          </label>
+          <Field
+            label="Automatic IEBA interval (minutes)"
+            value={serverAutoIebaInterval}
+            onChange={setServerAutoIebaInterval}
+            placeholder="60"
+            disabled={serverLoading || serverSaving}
+          />
+        </div>
       </section>
 
       <section

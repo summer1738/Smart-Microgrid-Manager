@@ -70,6 +70,8 @@ async def apply_schedule(session: AsyncSession, now: Optional[datetime] = None) 
         app = appliances.get(app_id)
         if app is None:
             continue
+        if bool(getattr(app, "manual_override_active", False)):
+            continue
         new_on = planned_state.lower() == "on"
         if app.is_on != new_on:
             app.is_on = new_on

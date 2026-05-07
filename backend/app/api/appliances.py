@@ -9,11 +9,20 @@ from sqlalchemy import select, desc, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_min_role
+from app.config import settings
 from app.database import get_db
 from app.models import Appliance, BatteryReading, LoadReading, PvReading, ScheduleSlot
-from app.schemas import ApplianceCreate, ApplianceOut, ApplianceRunDecisionOut, ApplianceRunRequest, ApplianceUpdate
+from app.schemas import (
+    ApplianceCreate,
+    ApplianceManualControlRequest,
+    ApplianceOut,
+    ApplianceRunDecisionOut,
+    ApplianceRunRequest,
+    ApplianceUpdate,
+)
 from app.services.forecast_service import generate_hybrid_forecast
 from app.services.system_settings_service import ensure_system_settings_row
+from app.services.mqtt_ingest_service import publish_relay_command
 
 router = APIRouter(
     prefix="/appliances",
@@ -132,6 +141,46 @@ async def update_appliance(
         app.relay_topic = body.relay_topic
     if body.is_on is not None:
         app.is_on = body.is_on
+    await db.flush()
+    await db.refresh(app)
+    return app
+
+
+@router.post("/{appliance_id}/manual-control", response_model=ApplianceOut)
+async def manual_control_appliance(
+    appliance_id: int,
+    body: ApplianceManualControlRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ApplianceOut:
+    """
+    Operator-driven manual control. This activates a persistent override that IEBA must respect
+    until it is explicitly cleared.
+    """
+    r = await db.execute(select(Appliance).where(Appliance.id == appliance_id))
+    app = r.scalar_one_or_none()
+    if app is None:
+        raise HTTPException(404, "Appliance not found")
+    app.is_on = bool(body.is_on)
+    app.manual_override_active = True
+    if not app.external_id:
+        raise HTTPException(400, "No appliance external_id configured.")
+    if not settings.use_hardware_simulation:
+        await publish_relay_command(app.external_id, app.is_on)
+    await db.flush()
+    await db.refresh(app)
+    return app
+
+
+@router.post("/{appliance_id}/clear-manual-override", response_model=ApplianceOut)
+async def clear_manual_override(
+    appliance_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> ApplianceOut:
+    r = await db.execute(select(Appliance).where(Appliance.id == appliance_id))
+    app = r.scalar_one_or_none()
+    if app is None:
+        raise HTTPException(404, "Appliance not found")
+    app.manual_override_active = False
     await db.flush()
     await db.refresh(app)
     return app

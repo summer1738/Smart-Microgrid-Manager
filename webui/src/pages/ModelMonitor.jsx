@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { MultiLineChart } from '../components/Charts'
+import InsightPanel from '../components/InsightPanel'
 import { apiFetch } from '../utils/api'
 
 function Badge({ ok, label }) {
@@ -169,6 +170,13 @@ export default function ModelMonitor({ api }) {
             </div>
             <div style={{ color: '#cbd5e1' }}>{data.forecast_message}</div>
           </div>
+
+          <InsightPanel
+            title="AI model insights"
+            summary={data.descriptive_summary}
+            insights={data.descriptive_insights || []}
+            footnote="This layer translates live sMAPE / MAPE / MAE, forecast behavior, battery reserve, and schedule timing into stakeholder-friendly explanations."
+          />
 
           <div
             style={{

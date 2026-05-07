@@ -96,6 +96,7 @@ export default function Appliances({ api }) {
   })
   const [runRequestBusyId, setRunRequestBusyId] = useState(null)
   const [runRequestResult, setRunRequestResult] = useState(null)
+  const [manualBusyId, setManualBusyId] = useState(null)
 
   const fetchList = async () => {
     try {
@@ -245,6 +246,46 @@ export default function Appliances({ api }) {
       await fetchList()
     } catch (e) {
       setError(e.message)
+    }
+  }
+
+  const setManualControl = async (appliance, isOn) => {
+    setManualBusyId(appliance.id)
+    setError(null)
+    try {
+      const r = await apiFetch(`${api}/appliances/${appliance.id}/manual-control`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_on: !!isOn }),
+      })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}))
+        throw new Error(err.detail || r.statusText)
+      }
+      await fetchList()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setManualBusyId(null)
+    }
+  }
+
+  const clearManualControl = async (appliance) => {
+    setManualBusyId(appliance.id)
+    setError(null)
+    try {
+      const r = await apiFetch(`${api}/appliances/${appliance.id}/clear-manual-override`, {
+        method: 'POST',
+      })
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}))
+        throw new Error(err.detail || r.statusText)
+      }
+      await fetchList()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setManualBusyId(null)
     }
   }
 
@@ -439,6 +480,7 @@ export default function Appliances({ api }) {
             <th style={{ textAlign: 'left', padding: '0.5rem' }}>Priority</th>
             <th style={{ textAlign: 'right', padding: '0.5rem' }}>Rated (W)</th>
             <th style={{ textAlign: 'left', padding: '0.5rem' }}>Mode</th>
+            <th style={{ textAlign: 'left', padding: '0.5rem' }}>Current control</th>
             <th style={{ textAlign: 'left', padding: '0.5rem' }}>Run preference</th>
             <th style={{ textAlign: 'right', padding: '0.5rem' }}>Actions</th>
           </tr>
@@ -510,6 +552,28 @@ export default function Appliances({ api }) {
                     {usageModeLabel(a.usage_mode)}{a.usage_mode === 'on_demand' ? ` (${a.default_run_minutes || 30} min)` : ''}
                   </span>
                 )}
+              </td>
+              <td style={{ padding: '0.5rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-start' }}>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '0.2rem 0.45rem',
+                      borderRadius: 999,
+                      fontSize: '0.75rem',
+                      background: a.manual_override_active ? 'rgba(245, 158, 11, 0.15)' : 'rgba(34, 197, 94, 0.12)',
+                      color: a.manual_override_active ? '#fde68a' : '#bbf7d0',
+                      border: `1px solid ${a.manual_override_active ? '#92400e' : '#166534'}`,
+                    }}
+                  >
+                    {a.manual_override_active ? 'Manual override' : 'IEBA-controlled'}
+                  </span>
+                  <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+                    Current state: <strong style={{ color: a.is_on ? '#4ade80' : '#cbd5e1' }}>{a.is_on ? 'ON' : 'OFF'}</strong>
+                  </span>
+                </div>
               </td>
               <td style={{ padding: '0.5rem' }}>
                 {editingId === a.id ? (
@@ -631,6 +695,32 @@ export default function Appliances({ api }) {
                     >
                       Edit
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setManualControl(a, true)}
+                      disabled={manualBusyId === a.id}
+                      style={{ marginRight: 6, padding: '0.25rem 0.5rem', borderRadius: 4, background: '#22c55e', color: '#0f172a', border: 'none', fontSize: '0.8rem' }}
+                    >
+                      {manualBusyId === a.id ? 'Saving…' : 'Turn ON'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setManualControl(a, false)}
+                      disabled={manualBusyId === a.id}
+                      style={{ marginRight: 6, padding: '0.25rem 0.5rem', borderRadius: 4, background: '#f59e0b', color: '#0f172a', border: 'none', fontSize: '0.8rem' }}
+                    >
+                      {manualBusyId === a.id ? 'Saving…' : 'Turn OFF'}
+                    </button>
+                    {a.manual_override_active && (
+                      <button
+                        type="button"
+                        onClick={() => clearManualControl(a)}
+                        disabled={manualBusyId === a.id}
+                        style={{ marginRight: 6, padding: '0.25rem 0.5rem', borderRadius: 4, background: '#334155', color: '#e2e8f0', border: 'none', fontSize: '0.8rem' }}
+                      >
+                        Clear override
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => deleteAppliance(a.id)}

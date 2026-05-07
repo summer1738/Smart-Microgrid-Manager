@@ -13,6 +13,7 @@ import ModelMonitor from './pages/ModelMonitor'
 import Settings from './pages/Settings'
 import Training from './pages/Training'
 import Weather from './pages/Weather'
+import Sensors from './pages/Sensors'
 import MqttNavIndicator from './components/MqttNavIndicator'
 
 const API = '/api'
@@ -41,6 +42,7 @@ function Nav() {
       {roleMeetsMin(user.role, 'viewer') && <Link to="/" style={linkStyle}>Dashboard</Link>}
       {roleMeetsMin(user.role, 'operator') && <Link to="/appliances" style={linkStyle}>Appliances</Link>}
       {roleMeetsMin(user.role, 'viewer') && <Link to="/forecast" style={linkStyle}>Forecast</Link>}
+      {roleMeetsMin(user.role, 'viewer') && <Link to="/sensors" style={linkStyle}>Sensors</Link>}
       {roleMeetsMin(user.role, 'viewer') && <Link to="/weather" style={linkStyle}>Weather &amp; PV</Link>}
       {roleMeetsMin(user.role, 'operator') && <Link to="/schedule" style={linkStyle}>Schedule</Link>}
       {roleMeetsMin(user.role, 'admin') && <Link to="/model-monitor" style={linkStyle}>Model monitor</Link>}
@@ -104,6 +106,7 @@ export default function App() {
               <Route path="/" element={<RequireRole minRole="viewer"><Dashboard api={API} /></RequireRole>} />
               <Route path="/appliances" element={<RequireRole minRole="operator"><Appliances api={API} /></RequireRole>} />
               <Route path="/forecast" element={<RequireRole minRole="viewer"><Forecast api={API} /></RequireRole>} />
+              <Route path="/sensors" element={<RequireRole minRole="viewer"><Sensors api={API} /></RequireRole>} />
               <Route path="/weather" element={<RequireRole minRole="viewer"><Weather api={API} /></RequireRole>} />
               <Route path="/schedule" element={<RequireRole minRole="operator"><Schedule api={API} /></RequireRole>} />
               <Route path="/training" element={<RequireRole minRole="admin"><Training api={API} /></RequireRole>} />

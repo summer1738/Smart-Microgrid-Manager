@@ -1,5 +1,6 @@
 """Live status and history from simulator or real hardware."""
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, desc, func
@@ -9,7 +10,18 @@ from app.auth import require_min_role
 from app.config import settings
 from app.database import get_db
 from app.models import Appliance, BatteryReading, LoadReading, PvReading
-from app.schemas import BatterySnapshot, HistoryPoint, LoadSnapshot, PvSnapshot, StatusHistoryOut, StatusOut
+from app.schemas import (
+    BatterySnapshot,
+    HistoryPoint,
+    LoadSensorSnapshotOut,
+    LoadSnapshot,
+    PvSnapshot,
+    SensorMonitorOut,
+    SensorSnapshotOut,
+    StatusHistoryOut,
+    StatusOut,
+)
+from app.services.mqtt_ingest_service import get_mqtt_health
 from app.services.schedule_executor_service import apply_schedule
 from app.services.simulator_service import tick_simulator_and_persist
 
@@ -22,6 +34,7 @@ router = APIRouter(
 
 FULL_BATTERY_SOC_PERCENT = 99.5
 UNEXPECTED_LOAD_THRESHOLD_KW = 0.03
+LOAD_READING_FRESHNESS_SECONDS = max(900, int(settings.simulator_interval_seconds) * 3)
 
 
 def _available_export_kw(pv_kw: float, total_load_kw: float, soc_percent: float) -> float:
@@ -63,6 +76,57 @@ def _manual_override_flag(expected_on: bool, measured_power_kw: float, measured_
         return False
     state_on = str(measured_state).lower() == "on"
     return state_on or float(measured_power_kw) > UNEXPECTED_LOAD_THRESHOLD_KW
+
+
+def _to_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _is_stale_load_reading(load_ts: Optional[datetime], reference_ts: Optional[datetime]) -> bool:
+    load_ts = _to_utc(load_ts)
+    reference_ts = _to_utc(reference_ts)
+    if load_ts is None or reference_ts is None:
+        return False
+    return (reference_ts - load_ts).total_seconds() > LOAD_READING_FRESHNESS_SECONDS
+
+
+def _sensor_freshness(ts: Optional[datetime], threshold_seconds: int, now: Optional[datetime] = None) -> tuple[str, Optional[int]]:
+    ts = _to_utc(ts)
+    now = _to_utc(now or datetime.now(timezone.utc))
+    if ts is None or now is None:
+        return "missing", None
+    age_seconds = max(0, int((now - ts).total_seconds()))
+    return ("fresh" if age_seconds <= threshold_seconds else "stale", age_seconds)
+
+
+def _pv_snapshot(row: Optional[PvReading], now: datetime) -> SensorSnapshotOut:
+    freshness, age_seconds = _sensor_freshness(row.timestamp if row else None, LOAD_READING_FRESHNESS_SECONDS, now=now)
+    return SensorSnapshotOut(
+        present=row is not None,
+        freshness=freshness if row is not None else "missing",
+        age_seconds=age_seconds,
+        timestamp=row.timestamp if row else None,
+        power_kw=float(row.power_kw) if row else None,
+        voltage=float(row.voltage) if row else None,
+        current_a=float(row.current_a) if row else None,
+    )
+
+
+def _battery_snapshot(row: Optional[BatteryReading], now: datetime) -> SensorSnapshotOut:
+    freshness, age_seconds = _sensor_freshness(row.timestamp if row else None, LOAD_READING_FRESHNESS_SECONDS, now=now)
+    return SensorSnapshotOut(
+        present=row is not None,
+        freshness=freshness if row is not None else "missing",
+        age_seconds=age_seconds,
+        timestamp=row.timestamp if row else None,
+        soc_percent=float(row.soc_percent) if row else None,
+        voltage=float(row.voltage) if row else None,
+        current_a=float(row.current_a) if row else None,
+    )
 
 
 @router.get("", response_model=StatusOut)
@@ -138,6 +202,10 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> StatusOut:
         pv_row = pv.scalar_one_or_none()
         bat = await db.execute(select(BatteryReading).order_by(desc(BatteryReading.timestamp)).limit(1))
         bat_row = bat.scalar_one_or_none()
+        reference_ts = max(
+            [ts for ts in [_to_utc(pv_row.timestamp) if pv_row else None, _to_utc(bat_row.timestamp) if bat_row else None] if ts],
+            default=None,
+        )
         load_rows = await db.execute(
             select(LoadReading, Appliance)
             .join(Appliance, LoadReading.appliance_id == Appliance.id)
@@ -151,17 +219,20 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> StatusOut:
             if app.id in seen:
                 continue
             seen.add(app.id)
-            unexpected_override = _manual_override_flag(bool(app.is_on), float(lr.power_kw), str(lr.state))
+            stale = _is_stale_load_reading(lr.timestamp, reference_ts)
+            measured_power_kw = 0.0 if stale else float(lr.power_kw)
+            measured_state = "stale" if stale else str(lr.state)
+            unexpected_override = _manual_override_flag(bool(app.is_on), measured_power_kw, measured_state)
             if unexpected_override:
                 manual_override_messages.append(f"{app.name} appears to be ON outside the planned schedule.")
             loads_out.append(LoadSnapshot(
                 appliance_id=app.external_id,
                 name=app.name,
-                power_kw=lr.power_kw,
-                state=lr.state,
+                power_kw=measured_power_kw,
+                state=measured_state,
                 unexpected_override=unexpected_override,
             ))
-            total += lr.power_kw
+            total += measured_power_kw
         ts = datetime.now(timezone.utc)
         battery_is_charging, battery_status_label, battery_status_level = _battery_status(
             pv_row.power_kw if pv_row else 0,
@@ -203,6 +274,10 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> StatusOut:
     pv_row = pv.scalar_one_or_none()
     bat = await db.execute(select(BatteryReading).order_by(desc(BatteryReading.timestamp)).limit(1))
     bat_row = bat.scalar_one_or_none()
+    reference_ts = max(
+        [ts for ts in [_to_utc(pv_row.timestamp) if pv_row else None, _to_utc(bat_row.timestamp) if bat_row else None] if ts],
+        default=None,
+    )
     load_rows = await db.execute(
         select(LoadReading, Appliance)
         .join(Appliance, LoadReading.appliance_id == Appliance.id)
@@ -217,17 +292,20 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> StatusOut:
         if app.id in seen:
             continue
         seen.add(app.id)
-        unexpected_override = _manual_override_flag(bool(app.is_on), float(lr.power_kw), str(lr.state))
+        stale = _is_stale_load_reading(lr.timestamp, reference_ts)
+        measured_power_kw = 0.0 if stale else float(lr.power_kw)
+        measured_state = "stale" if stale else str(lr.state)
+        unexpected_override = _manual_override_flag(bool(app.is_on), measured_power_kw, measured_state)
         if unexpected_override:
             manual_override_messages.append(f"{app.name} appears to be ON outside the planned schedule.")
         loads_out.append(LoadSnapshot(
             appliance_id=app.external_id,
             name=app.name,
-            power_kw=lr.power_kw,
-            state=lr.state,
+            power_kw=measured_power_kw,
+            state=measured_state,
             unexpected_override=unexpected_override,
         ))
-        total += lr.power_kw
+        total += measured_power_kw
     ts = datetime.now(timezone.utc)
     battery_is_charging, battery_status_label, battery_status_level = _battery_status(
         pv_row.power_kw if pv_row else 0,
@@ -262,6 +340,76 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> StatusOut:
         manual_override_detected=bool(manual_override_messages),
         manual_override_messages=manual_override_messages,
         simulated=False,
+    )
+
+
+@router.get("/sensors", response_model=SensorMonitorOut)
+async def get_sensor_monitor(db: AsyncSession = Depends(get_db)) -> SensorMonitorOut:
+    """
+    Return latest sensor telemetry with freshness for PV, battery, and per-appliance load sensors.
+    Useful for a raw sensor-monitoring UI in both simulation and hardware modes.
+    """
+    now = datetime.now(timezone.utc)
+    pv_row = (await db.execute(select(PvReading).order_by(desc(PvReading.timestamp)).limit(1))).scalar_one_or_none()
+    bat_row = (await db.execute(select(BatteryReading).order_by(desc(BatteryReading.timestamp)).limit(1))).scalar_one_or_none()
+    load_rows = await db.execute(
+        select(LoadReading, Appliance)
+        .join(Appliance, LoadReading.appliance_id == Appliance.id)
+        .order_by(desc(LoadReading.timestamp))
+    )
+
+    loads: list[LoadSensorSnapshotOut] = []
+    seen: set[int] = set()
+    for lr, app in load_rows.all():
+        if app.id in seen:
+            continue
+        seen.add(app.id)
+        freshness, age_seconds = _sensor_freshness(lr.timestamp, LOAD_READING_FRESHNESS_SECONDS, now=now)
+        stale = freshness == "stale"
+        loads.append(
+            LoadSensorSnapshotOut(
+                appliance_id=app.external_id,
+                name=app.name,
+                present=True,
+                freshness=freshness,
+                age_seconds=age_seconds,
+                timestamp=lr.timestamp,
+                power_kw=0.0 if stale else float(lr.power_kw),
+                state="stale" if stale else str(lr.state),
+                expected_on=bool(app.is_on),
+                manual_override_active=bool(getattr(app, "manual_override_active", False)),
+            )
+        )
+
+    missing_apps = (await db.execute(select(Appliance).order_by(Appliance.priority, Appliance.id))).scalars().all()
+    seen_ext = {row.appliance_id for row in loads}
+    for app in missing_apps:
+        if app.external_id in seen_ext:
+            continue
+        loads.append(
+            LoadSensorSnapshotOut(
+                appliance_id=app.external_id,
+                name=app.name,
+                present=False,
+                freshness="missing",
+                age_seconds=None,
+                timestamp=None,
+                power_kw=0.0,
+                state="missing",
+                expected_on=bool(app.is_on),
+                manual_override_active=bool(getattr(app, "manual_override_active", False)),
+            )
+        )
+
+    loads.sort(key=lambda row: (row.freshness != "fresh", row.name.lower()))
+    return SensorMonitorOut(
+        generated_at=now,
+        mode="simulation" if settings.use_hardware_simulation else "hardware_ingest",
+        freshness_threshold_seconds=LOAD_READING_FRESHNESS_SECONDS,
+        pv=_pv_snapshot(pv_row, now),
+        battery=_battery_snapshot(bat_row, now),
+        loads=loads,
+        mqtt=get_mqtt_health(),
     )
 
 
