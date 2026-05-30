@@ -169,15 +169,15 @@ export default function Training({ api }) {
   return (
     <div>
       <p style={{ marginBottom: '1rem' }}>
-        <Link to="/">← Dashboard</Link>
+        <Link to="/">Dashboard</Link>
         {' · '}
         <Link to="/model-monitor">Model monitor</Link>
       </p>
       <h1>LSTM training</h1>
-      <p style={{ color: '#94a3b8', fontSize: '0.9rem', maxWidth: 720 }}>
+      {/*<p style={{ color: '#94a3b8', fontSize: '0.9rem', maxWidth: 720 }}>
         All training runs on the server from this page: export readings → build datasets → train both models. No terminal
         commands needed after PyTorch is installed in the backend venv (one-time <code>pip install … torch</code>).
-      </p>
+      </p>*/}
 
       {statusErr && <p style={{ color: '#f87171', marginTop: '0.75rem' }}>{statusErr}</p>}
 
@@ -215,7 +215,7 @@ export default function Training({ api }) {
           <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Scheduled training</h2>
           <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: 0 }}>
             Every <strong>{status.auto_train_interval_minutes}</strong> minutes (env), using the last{' '}
-            <strong>{status.auto_train_history_hours}</strong> hours of data. Toggle below; value is stored in MySQL.
+            <strong>{status.auto_train_history_hours}</strong> hours of data.
           </p>
           <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: autoSaving ? 'wait' : 'pointer' }}>
             <ToggleSwitch

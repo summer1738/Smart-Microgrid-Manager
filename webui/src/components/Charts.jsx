@@ -136,7 +136,7 @@ export function MultiLineChart({ series, labels, height = 200, title }) {
   )
 }
 
-/** Donut chart for one value 0–100 (e.g. SOC). */
+/** Donut chart for one value 0-100 (e.g. SOC). */
 export function DonutChart({ value, label, color = '#0ea5e9', size = 120 }) {
   const v = Math.max(0, Math.min(100, value))
   const r = 42

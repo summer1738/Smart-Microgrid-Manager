@@ -117,7 +117,7 @@ async def get_training_status(db: AsyncSession = Depends(get_db)) -> dict:
 @router.get("", response_model=ForecastOut)
 async def get_forecast(horizon_hours: int = 24) -> ForecastOut:
     """
-    Return 24–48h forecast.
+    Return 24-48h forecast.
     - If trained models exist in `ai/models/*.pt` and torch is installed, use them.
     - Otherwise, fall back to a simulated PV + demand curve.
     """

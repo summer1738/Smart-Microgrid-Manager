@@ -22,7 +22,7 @@ def load_power_kw(
     if seed is not None:
         random.seed(seed)
     hour = dt.hour + dt.minute / 60.0
-    # Simple daily pattern: higher in morning (6–9) and evening (17–21)
+    # Simple daily pattern: higher in morning (6-9) and evening (17-21)
     if 6 <= hour <= 9 or 17 <= hour <= 21:
         pattern = 0.9 + 0.1 * random.random()
     else:

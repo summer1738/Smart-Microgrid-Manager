@@ -31,11 +31,11 @@ function FreshnessBadge({ freshness }) {
 }
 
 function fmtTs(ts) {
-  return ts ? new Date(ts).toLocaleString() : '–'
+  return ts ? new Date(ts).toLocaleString() : '-'
 }
 
 function fmtAge(seconds) {
-  if (seconds == null) return '–'
+  if (seconds == null) return '-'
   if (seconds < 60) return `${seconds}s ago`
   const mins = Math.floor(seconds / 60)
   if (mins < 60) return `${mins}m ago`
@@ -100,10 +100,12 @@ export default function Sensors({ api }) {
   return (
     <div>
       <h1>Sensors</h1>
+      {/*
       <p style={{ color: '#94a3b8', fontSize: '0.92rem', maxWidth: 820 }}>
         Monitor raw sensor telemetry coming into the backend. This page shows the latest PV, battery, temp/humidity, light, and per-load sensor
         values along with freshness so you can tell whether the web UI is looking at live data, stale readings, or no sensor data yet.
       </p>
+      */}
 
       {error && <p style={{ color: '#f87171' }}>Error: {error}</p>}
 
@@ -149,9 +151,9 @@ export default function Sensors({ api }) {
               title="PV sensor"
               sensor={data.pv}
               rows={[
-                { label: 'Power', value: data.pv?.power_kw != null ? `${data.pv.power_kw.toFixed(3)} kW` : '–' },
-                { label: 'Voltage', value: data.pv?.voltage != null ? `${data.pv.voltage} V` : '–' },
-                { label: 'Current', value: data.pv?.current_a != null ? `${data.pv.current_a.toFixed(2)} A` : '–' },
+                { label: 'Power', value: data.pv?.power_kw != null ? `${data.pv.power_kw.toFixed(3)} kW` : '-' },
+                { label: 'Voltage', value: data.pv?.voltage != null ? `${data.pv.voltage} V` : '-' },
+                { label: 'Current', value: data.pv?.current_a != null ? `${data.pv.current_a.toFixed(2)} A` : '-' },
                 { label: 'Timestamp', value: fmtTs(data.pv?.timestamp) },
                 { label: 'Age', value: fmtAge(data.pv?.age_seconds) },
               ]}
@@ -160,9 +162,9 @@ export default function Sensors({ api }) {
               title="Battery sensor"
               sensor={data.battery}
               rows={[
-                { label: 'SOC', value: data.battery?.soc_percent != null ? `${data.battery.soc_percent.toFixed(1)}%` : '–' },
-                { label: 'Voltage', value: data.battery?.voltage != null ? `${data.battery.voltage} V` : '–' },
-                { label: 'Current', value: data.battery?.current_a != null ? `${data.battery.current_a.toFixed(2)} A` : '–' },
+                { label: 'SOC', value: data.battery?.soc_percent != null ? `${data.battery.soc_percent.toFixed(1)}%` : '-' },
+                { label: 'Voltage', value: data.battery?.voltage != null ? `${data.battery.voltage} V` : '-' },
+                { label: 'Current', value: data.battery?.current_a != null ? `${data.battery.current_a.toFixed(2)} A` : '-' },
                 { label: 'Timestamp', value: fmtTs(data.battery?.timestamp) },
                 { label: 'Age', value: fmtAge(data.battery?.age_seconds) },
               ]}
@@ -171,8 +173,8 @@ export default function Sensors({ api }) {
               title="Temp/Humidity sensor"
               sensor={data.temp_humidity}
               rows={[
-                { label: 'Temperature', value: data.temp_humidity?.temp_c != null ? `${data.temp_humidity.temp_c.toFixed(1)} °C` : '–' },
-                { label: 'Humidity', value: data.temp_humidity?.humidity_percent != null ? `${data.temp_humidity.humidity_percent.toFixed(1)} %` : '–' },
+                { label: 'Temperature', value: data.temp_humidity?.temp_c != null ? `${data.temp_humidity.temp_c.toFixed(1)} °C` : '-' },
+                { label: 'Humidity', value: data.temp_humidity?.humidity_percent != null ? `${data.temp_humidity.humidity_percent.toFixed(1)} %` : '-' },
                 { label: 'Timestamp', value: fmtTs(data.temp_humidity?.timestamp) },
                 { label: 'Age', value: fmtAge(data.temp_humidity?.age_seconds) },
               ]}
@@ -181,7 +183,7 @@ export default function Sensors({ api }) {
               title="Light sensor"
               sensor={data.light}
               rows={[
-                { label: 'Is sunny', value: data.light?.is_sunny != null ? (data.light.is_sunny ? 'Yes' : 'No') : '–' },
+                { label: 'Is sunny', value: data.light?.is_sunny != null ? (data.light.is_sunny ? 'Yes' : 'No') : '-' },
                 { label: 'Timestamp', value: fmtTs(data.light?.timestamp) },
                 { label: 'Age', value: fmtAge(data.light?.age_seconds) },
               ]}

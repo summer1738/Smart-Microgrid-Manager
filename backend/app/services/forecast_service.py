@@ -1,5 +1,5 @@
 """
-Forecast service: 24–48h ahead for PV generation and total consumption.
+Forecast service: 24-48h ahead for PV generation and total consumption.
 Uses Open-Meteo weather when enabled; otherwise clear-sky PV curve.
 """
 from datetime import datetime, timedelta, timezone
@@ -41,7 +41,7 @@ def generate_simulated_forecast(
         timestamps.append(ts.isoformat())
         generation_kw.append(pv_power_kw(ts, pv_capacity_kw, cloud_factor))
 
-        # Simple demand pattern: base + peaks in 7–9 and 17–21
+        # Simple demand pattern: base + peaks in 7-9 and 17-21
         hour = ts.hour + ts.minute / 60.0
         if 7 <= hour <= 9 or 17 <= hour <= 21:
             demand = 0.4 + 0.3 * (1.0 if 17 <= hour <= 21 else 0.7)

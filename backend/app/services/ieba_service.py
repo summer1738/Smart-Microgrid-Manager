@@ -46,7 +46,7 @@ def _hhmm_to_hour(s: str) -> Optional[float]:
 
 
 def _in_window(hour: float, start: float, end: float) -> bool:
-    # Supports wrap-around windows (e.g., 22:00–06:00).
+    # Supports wrap-around windows (e.g., 22:00-06:00).
     if start == end:
         return False
     if start < end:

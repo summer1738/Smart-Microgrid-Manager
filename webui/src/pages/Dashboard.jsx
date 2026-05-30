@@ -98,7 +98,7 @@ export default function Dashboard({ api }) {
     manual_override_messages,
     simulated,
   } = status
-  const ts = status.timestamp ? new Date(status.timestamp).toLocaleString() : '–'
+  const ts = status.timestamp ? new Date(status.timestamp).toLocaleString() : '-'
   const loadBars = loads
     .map((l) => {
       const on = l.state === 'on'
@@ -200,7 +200,7 @@ export default function Dashboard({ api }) {
 
       {chartData && (
         <section style={{ marginTop: '2rem', background: '#1e293b', padding: '1rem', borderRadius: 8 }}>
-          <h2 style={{ fontSize: '1rem', marginBottom: 4 }}>Last 24 hours – trends</h2>
+          <h2 style={{ fontSize: '1rem', marginBottom: 4 }}>Last 24 hours - trends</h2>
           <MultiLineChart
             title="Battery SOC (%)"
             series={[{ name: 'SOC %', color: '#0ea5e9', values: chartData.soc }]}
@@ -239,7 +239,7 @@ export default function Dashboard({ api }) {
                   p.timestamp
                     ? showColorHover
                       ? `${new Date(p.timestamp).toLocaleString()} — SOC ${p.soc_percent ?? 0}%. Cyan bar height = battery state of charge (history); color is the chart series, not MQTT status.`
-                      : new Date(p.timestamp).toLocaleString() + ' – ' + (p.soc_percent ?? 0) + '%'
+                      : new Date(p.timestamp).toLocaleString() + ' - ' + (p.soc_percent ?? 0) + '%'
                     : ''
                 }
               />
@@ -254,6 +254,7 @@ export default function Dashboard({ api }) {
         </section>
       )}
 
+      {/*  
       <h2 style={{ marginTop: '2rem' }}>Loads</h2>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
@@ -275,6 +276,7 @@ export default function Dashboard({ api }) {
           ))}
         </tbody>
       </table>
+      */}
     </div>
   )
 }

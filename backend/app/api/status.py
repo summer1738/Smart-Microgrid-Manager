@@ -34,7 +34,7 @@ router = APIRouter(
 
 FULL_BATTERY_SOC_PERCENT = 99.5
 UNEXPECTED_LOAD_THRESHOLD_KW = 0.03
-LOAD_READING_FRESHNESS_SECONDS = max(900, int(settings.simulator_interval_seconds) * 3)
+LOAD_READING_FRESHNESS_SECONDS = int(settings.simulator_interval_seconds) * 5  # 5x the update interval
 
 
 def _available_export_kw(pv_kw: float, total_load_kw: float, soc_percent: float) -> float:

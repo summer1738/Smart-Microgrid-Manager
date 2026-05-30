@@ -94,13 +94,13 @@ export default function Settings({ api }) {
     },
     {
       id: 'res_5_6kva_standard',
-      label: '5–6kVA Standard/Premium (family home, borehole pump)',
+      label: '5-6kVA Standard/Premium (family home, borehole pump)',
       sizing: { inverter_capacity_kw: 5.0, battery_capacity_kwh: 5.12 },
       weather: { weather_pv_capacity_kw: 2.64 }, // 6 × 440W (conservative)
     },
     {
       id: 'res_10kva_high_demand',
-      label: '8–10kVA High Demand (large home, AC, 1hp+ pump)',
+      label: '8-10kVA High Demand (large home, AC, 1hp+ pump)',
       sizing: { inverter_capacity_kw: 10.0, battery_capacity_kwh: 10.0 },
       weather: { weather_pv_capacity_kw: 5.28 }, // 12 × 440W
     },
@@ -240,7 +240,7 @@ export default function Settings({ api }) {
   return (
     <div>
       <p style={{ marginBottom: '1rem' }}>
-        <Link to="/">← Back to dashboard</Link>
+        <Link to="/">Back to dashboard</Link>
       </p>
       <h1>Settings</h1>
 
@@ -407,7 +407,7 @@ export default function Settings({ api }) {
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
           <Field label="PV nameplate (kW)" value={serverPvKw} onChange={setServerPvKw} placeholder="1.0" disabled={serverLoading || serverSaving} />
-          <Field label="Derate (0–1)" value={serverDerate} onChange={setServerDerate} placeholder="0.85" disabled={serverLoading || serverSaving} />
+          <Field label="Derate (0-1)" value={serverDerate} onChange={setServerDerate} placeholder="0.85" disabled={serverLoading || serverSaving} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
           <ToggleSwitch

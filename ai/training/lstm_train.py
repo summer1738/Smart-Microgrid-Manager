@@ -137,7 +137,7 @@ def main() -> None:
         p = np.concatenate(preds)
         a = np.concatenate(actuals)
         eps = 1e-6
-        # Symmetric MAPE (%), bounded ~0–200 for typical cases
+        # Symmetric MAPE (%), bounded ~0-200 for typical cases
         smape = float(np.mean(2.0 * np.abs(a - p) / (np.abs(a) + np.abs(p) + eps)) * 100.0)
         mae = float(np.mean(np.abs(a - p)))
         min_y_kw = 0.02

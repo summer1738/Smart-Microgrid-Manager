@@ -134,10 +134,10 @@ export default function ModelMonitor({ api }) {
         )}
       </div>
 
-      <p style={{ color: '#94a3b8', fontSize: '0.9rem', maxWidth: 720 }}>
+      {/* <p style={{ color: '#94a3b8', fontSize: '0.9rem', maxWidth: 720 }}>
         Tracks PyTorch, checkpoint files, and whether the <strong>Forecast</strong> API uses LSTMs. IEBA schedule
         still uses the <strong>simulated</strong> curve until wired to the model.
-      </p>
+      </p> */}
 
       {err && (
         <p style={{ color: '#f87171', background: '#450a0a', padding: '0.75rem', borderRadius: 8 }}>{err}</p>
@@ -163,10 +163,10 @@ export default function ModelMonitor({ api }) {
           >
             <div style={{ marginBottom: 8 }}>
               <strong>Inference</strong> (24h rollout):{' '}
-              <code style={{ color: '#38bdf8' }}>{data.inference_ms != null ? `${data.inference_ms} ms` : '–'}</code>
+              <code style={{ color: '#38bdf8' }}>{data.inference_ms != null ? `${data.inference_ms} ms` : '-'}</code>
             </div>
             <div style={{ marginBottom: 8 }}>
-              <strong>Seed</strong>: {data.seed_source} (DB-backed seed = future improvement)
+              {/* <strong>Seed</strong>: {data.seed_source} (DB-backed seed = future improvement) */}
             </div>
             <div style={{ color: '#cbd5e1' }}>{data.forecast_message}</div>
           </div>
@@ -175,7 +175,7 @@ export default function ModelMonitor({ api }) {
             title="AI model insights"
             summary={data.descriptive_summary}
             insights={data.descriptive_insights || []}
-            footnote="This layer translates live sMAPE / MAPE / MAE, forecast behavior, battery reserve, and schedule timing into stakeholder-friendly explanations."
+            footnote="These explanations are generated from model performance metrics, checkpoint metadata, and the latest inference rollout."
           />
 
           <div
@@ -188,10 +188,10 @@ export default function ModelMonitor({ api }) {
             }}
           >
             <h2 style={{ fontSize: '1rem', marginTop: 0, marginBottom: '0.75rem' }}>Model performance</h2>
-            <p style={{ color: '#64748b', fontSize: '0.8rem', marginBottom: '0.75rem', maxWidth: 720 }}>
+            {/*<p style={{ color: '#64748b', fontSize: '0.8rem', marginBottom: '0.75rem', maxWidth: 720 }}>
               <strong>sMAPE</strong> (symmetric MAPE) is shown for PV because classic MAPE blows up when power is near zero
               (e.g. night). <strong>MAPE (masked)</strong> uses only hours where |actual| ≥ 0.02 kW.
-            </p>
+            </p>*/}
             <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', fontSize: '0.9rem' }}>
               <div>
                 <h3 style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: 6 }}>Validation (from training)</h3>
@@ -207,10 +207,10 @@ export default function ModelMonitor({ api }) {
                     <tr style={{ borderBottom: '1px solid #334155' }}>
                       <td style={{ padding: '6px 8px 6px 0' }}>sMAPE %</td>
                       <td style={{ textAlign: 'right', padding: '6px 0' }}>
-                        {data.gen?.validation_smape != null ? `${Number(data.gen.validation_smape).toFixed(2)}%` : '–'}
+                        {data.gen?.validation_smape != null ? `${Number(data.gen.validation_smape).toFixed(2)}%` : '-'}
                       </td>
                       <td style={{ textAlign: 'right', padding: '6px 0' }}>
-                        {data.load?.validation_smape != null ? `${Number(data.load.validation_smape).toFixed(2)}%` : '–'}
+                        {data.load?.validation_smape != null ? `${Number(data.load.validation_smape).toFixed(2)}%` : '-'}
                       </td>
                     </tr>
                     <tr style={{ borderBottom: '1px solid #334155' }}>
@@ -218,21 +218,21 @@ export default function ModelMonitor({ api }) {
                       <td style={{ textAlign: 'right', padding: '6px 0' }}>
                         {data.gen?.validation_mape_masked != null
                           ? `${Number(data.gen.validation_mape_masked).toFixed(2)}%`
-                          : '–'}
+                          : '-'}
                       </td>
                       <td style={{ textAlign: 'right', padding: '6px 0' }}>
                         {data.load?.validation_mape_masked != null
                           ? `${Number(data.load.validation_mape_masked).toFixed(2)}%`
-                          : '–'}
+                          : '-'}
                       </td>
                     </tr>
                     <tr>
                       <td style={{ padding: '6px 8px 6px 0' }}>MAE (kW)</td>
                       <td style={{ textAlign: 'right', padding: '6px 0' }}>
-                        {data.gen?.validation_mae != null ? Number(data.gen.validation_mae).toFixed(4) : '–'}
+                        {data.gen?.validation_mae != null ? Number(data.gen.validation_mae).toFixed(4) : '-'}
                       </td>
                       <td style={{ textAlign: 'right', padding: '6px 0' }}>
-                        {data.load?.validation_mae != null ? Number(data.load.validation_mae).toFixed(4) : '–'}
+                        {data.load?.validation_mae != null ? Number(data.load.validation_mae).toFixed(4) : '-'}
                       </td>
                     </tr>
                   </tbody>
@@ -267,28 +267,28 @@ export default function ModelMonitor({ api }) {
                     <tr style={{ borderBottom: '1px solid #334155' }}>
                       <td style={{ padding: '6px 8px 6px 0' }}>sMAPE %</td>
                       <td style={{ textAlign: 'right', padding: '6px 0' }}>
-                        {data.live_smape_gen != null ? `${Number(data.live_smape_gen).toFixed(2)}%` : '–'}
+                        {data.live_smape_gen != null ? `${Number(data.live_smape_gen).toFixed(2)}%` : '-'}
                       </td>
                       <td style={{ textAlign: 'right', padding: '6px 0' }}>
-                        {data.live_smape_load != null ? `${Number(data.live_smape_load).toFixed(2)}%` : '–'}
+                        {data.live_smape_load != null ? `${Number(data.live_smape_load).toFixed(2)}%` : '-'}
                       </td>
                     </tr>
                     <tr style={{ borderBottom: '1px solid #334155' }}>
                       <td style={{ padding: '6px 8px 6px 0' }}>MAPE % (masked)</td>
                       <td style={{ textAlign: 'right', padding: '6px 0' }}>
-                        {data.live_mape_masked_gen != null ? `${Number(data.live_mape_masked_gen).toFixed(2)}%` : '–'}
+                        {data.live_mape_masked_gen != null ? `${Number(data.live_mape_masked_gen).toFixed(2)}%` : '-'}
                       </td>
                       <td style={{ textAlign: 'right', padding: '6px 0' }}>
-                        {data.live_mape_masked_load != null ? `${Number(data.live_mape_masked_load).toFixed(2)}%` : '–'}
+                        {data.live_mape_masked_load != null ? `${Number(data.live_mape_masked_load).toFixed(2)}%` : '-'}
                       </td>
                     </tr>
                     <tr>
                       <td style={{ padding: '6px 8px 6px 0' }}>MAE (kW)</td>
                       <td style={{ textAlign: 'right', padding: '6px 0' }}>
-                        {data.live_mae_gen != null ? Number(data.live_mae_gen).toFixed(4) : '–'}
+                        {data.live_mae_gen != null ? Number(data.live_mae_gen).toFixed(4) : '-'}
                       </td>
                       <td style={{ textAlign: 'right', padding: '6px 0' }}>
-                        {data.live_mae_load != null ? Number(data.live_mae_load).toFixed(4) : '–'}
+                        {data.live_mae_load != null ? Number(data.live_mae_load).toFixed(4) : '-'}
                       </td>
                     </tr>
                   </tbody>
@@ -333,12 +333,12 @@ export default function ModelMonitor({ api }) {
                     <>
                       <dt style={{ color: '#64748b' }}>Validation</dt>
                       <dd style={{ margin: '0 0 8px' }}>
-                        sMAPE {data.gen.validation_smape != null ? `${Number(data.gen.validation_smape).toFixed(2)}%` : '–'}
+                        sMAPE {data.gen.validation_smape != null ? `${Number(data.gen.validation_smape).toFixed(2)}%` : '-'}
                         {data.gen.validation_mape_masked != null && (
                           <> · MAPE(mask) {Number(data.gen.validation_mape_masked).toFixed(2)}%</>
                         )}
                         {' · '}
-                        MAE {data.gen.validation_mae != null ? Number(data.gen.validation_mae).toFixed(4) : '–'} kW
+                        MAE {data.gen.validation_mae != null ? Number(data.gen.validation_mae).toFixed(4) : '-'} kW
                       </dd>
                     </>
                   )}
@@ -369,12 +369,12 @@ export default function ModelMonitor({ api }) {
                     <>
                       <dt style={{ color: '#64748b' }}>Validation</dt>
                       <dd style={{ margin: '0 0 8px' }}>
-                        sMAPE {data.load.validation_smape != null ? `${Number(data.load.validation_smape).toFixed(2)}%` : '–'}
+                        sMAPE {data.load.validation_smape != null ? `${Number(data.load.validation_smape).toFixed(2)}%` : '-'}
                         {data.load.validation_mape_masked != null && (
                           <> · MAPE(mask) {Number(data.load.validation_mape_masked).toFixed(2)}%</>
                         )}
                         {' · '}
-                        MAE {data.load.validation_mae != null ? Number(data.load.validation_mae).toFixed(4) : '–'} kW
+                        MAE {data.load.validation_mae != null ? Number(data.load.validation_mae).toFixed(4) : '-'} kW
                       </dd>
                     </>
                   )}

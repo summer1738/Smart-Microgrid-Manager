@@ -56,9 +56,9 @@ export default function Forecast({ api }) {
     <div>
       <h1>Forecast</h1>
       <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
-        Generated at: {data.generated_at ? new Date(data.generated_at).toLocaleString() : '–'} · Horizon: {data.horizon_hours} h
+        Generated at: {data.generated_at ? new Date(data.generated_at).toLocaleString() : '-'} · Horizon: {data.horizon_hours} h
       </p>
-      {data.message && <p style={{ background: '#1e293b', padding: '0.5rem 0.75rem', borderRadius: 6 }}>{data.message}</p>}
+      {/*data.message && <p style={{ background: '#1e293b', padding: '0.5rem 0.75rem', borderRadius: 6 }}>{data.message}</p>*/}
       {insights && (
         <InsightPanel
           title="AI forecast insights"

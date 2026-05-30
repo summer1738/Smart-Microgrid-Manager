@@ -25,7 +25,7 @@ def update_soc(
 ) -> float:
     """
     Update SOC given PV generation and load over dt_seconds.
-    capacity_kwh: usable capacity (e.g. 12V 100Ah -> ~1.2 kWh usable if 40–80% SOC window).
+    capacity_kwh: usable capacity (e.g. 12V 100Ah -> ~1.2 kWh usable if 40-80% SOC window).
     """
     net_kw = pv_power_kw - load_power_kw
     if net_kw >= 0:

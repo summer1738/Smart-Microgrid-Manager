@@ -295,9 +295,9 @@ export default function Appliances({ api }) {
     const p2 = list.filter((a) => a.priority === 2).reduce((s, a) => s + a.rated_watts, 0)
     const p3 = list.filter((a) => a.priority === 3).reduce((s, a) => s + a.rated_watts, 0)
     const byPriority = [
-      { label: 'Priority 1 – Critical', value: p1, color: '#ef4444' },
-      { label: 'Priority 2 – Essential', value: p2, color: '#f59e0b' },
-      { label: 'Priority 3 – Non-essential', value: p3, color: '#64748b' },
+      { label: 'Priority 1 - Critical', value: p1, color: '#ef4444' },
+      { label: 'Priority 2 - Essential', value: p2, color: '#f59e0b' },
+      { label: 'Priority 3 - Non-essential', value: p3, color: '#64748b' },
     ]
     const topRated = [...list]
       .sort((a, b) => b.rated_watts - a.rated_watts)
@@ -310,7 +310,7 @@ export default function Appliances({ api }) {
 
   return (
     <div>
-      <h1>Appliances (UCLPI)</h1>
+      <h1>Appliances</h1>
       {error && <p style={{ color: '#f87171' }}>{error}</p>}
 
       <form onSubmit={handleSubmit} style={{ marginTop: '1rem', display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'flex-end' }}>
@@ -326,9 +326,9 @@ export default function Appliances({ api }) {
           onChange={(e) => setForm((f) => ({ ...f, priority: Number(e.target.value) }))}
           style={{ padding: '0.5rem', borderRadius: 6, border: '1px solid #475569', background: '#1e293b', color: '#e2e8f0' }}
         >
-          <option value={1}>Priority 1 – Critical</option>
-          <option value={2}>Priority 2 – Essential</option>
-          <option value={3}>Priority 3 – Non-essential</option>
+          <option value={1}>Priority 1 - Critical</option>
+          <option value={2}>Priority 2 - Essential</option>
+          <option value={3}>Priority 3 - Non-essential</option>
         </select>
         <input
           type="number"
@@ -508,9 +508,9 @@ export default function Appliances({ api }) {
                     onChange={(e) => setEditForm((f) => ({ ...f, priority: Number(e.target.value) }))}
                     style={{ padding: '0.25rem', borderRadius: 4, border: '1px solid #475569', background: '#0f172a', color: '#e2e8f0' }}
                   >
-                    <option value={1}>Priority 1 – Critical</option>
-                    <option value={2}>Priority 2 – Essential</option>
-                    <option value={3}>Priority 3 – Non-essential</option>
+                    <option value={1}>Priority 1 - Critical</option>
+                    <option value={2}>Priority 2 - Essential</option>
+                    <option value={3}>Priority 3 - Non-essential</option>
                   </select>
                 ) : (
                   priorityLabel(a.priority)
