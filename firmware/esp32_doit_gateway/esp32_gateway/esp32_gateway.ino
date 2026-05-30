@@ -12,13 +12,32 @@ const int   MQTT_PORT_CFG = MQTT_PORT;
 const char* MQTT_PREFIX = MQTT_TOPIC_PREFIX;
 
 // ===== Pin Definitions =====
+// ===============================
+// LED & BUZZER PINS
+// ===============================
+#define WIFI_LED          2
+#define LIGHT_LED         15
+#define STATUS_LED        26
+#define CHARGING_LED      27
+#define FAULT_LED         14
+#define BUZZER_PIN        13
+
+// ===============================
+// BATTERY MONITORING
+// ===============================
+#define BATTERY_PIN       34
+
+// Voltage divider resistors
+const float R1 = 100000.0;
+const float R2 = 100000.0;
+
+// ADC reference
+const float ADC_REFERENCE = 3.3;
+const int ADC_RESOLUTION = 4095;
+
 #define DHT_PIN         4
 #define DHT_TYPE        DHT11
 #define LIGHT_SENSOR    21
-#define BUZZER_PIN      32
-#define LED_BAT_HIGH    13
-#define LED_BAT_MED     12
-#define LED_BAT_LOW     14
 #define LED_LOAD_1      27
 #define LED_LOAD_2      26
 #define RELAY_LOAD_1    25  // Control relay for Load 1
@@ -28,9 +47,102 @@ static const char* EXT_LOAD_1 = "proto_led_a";
 static const char* EXT_LOAD_2 = "proto_led_b";
 
 // ===== Sensor & Device Variables =====
-float batterySOC = 100.0;
-float batteryVoltage = 48.0;
+// Battery and system state
+float batteryVoltage = 0.0;
+float batteryPercentage = 0.0;
+bool chargingState = false;
+bool lowBattery = false;
+bool criticalBattery = false;
+float batterySOC = 100.0; // legacy, for compatibility
 float batteryCurrent = 0.0;
+// Lighting load state
+bool lightState = false;
+// ===============================
+// Battery Reading Function
+// ===============================
+void readBattery()
+{
+  int rawADC = analogRead(BATTERY_PIN);
+  float adcVoltage = ((float)rawADC / ADC_RESOLUTION) * ADC_REFERENCE;
+  // Voltage divider formula
+  batteryVoltage = adcVoltage * ((R1 + R2) / R2);
+  // Battery percentage estimation (map 3.0V-4.2V to 0-100%)
+  batteryPercentage = map(batteryVoltage * 100, 300, 420, 0, 100);
+  if (batteryPercentage > 100)
+    batteryPercentage = 100;
+  if (batteryPercentage < 0)
+    batteryPercentage = 0;
+  // Battery state checks
+  lowBattery = batteryPercentage < 25;
+  criticalBattery = batteryPercentage < 10;
+  // Charging state simulation
+  chargingState = batteryVoltage > 4.0;
+}
+
+// ===============================
+// Device Status Handler
+// ===============================
+void handleSystemStatus()
+{
+  // WiFi Indicator
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    digitalWrite(WIFI_LED, HIGH);
+  }
+  else
+  {
+    digitalWrite(WIFI_LED, millis() % 500 < 250);
+  }
+  // Charging Indicator
+  digitalWrite(CHARGING_LED, chargingState);
+  // Healthy System
+  if (!lowBattery && WiFi.status() == WL_CONNECTED)
+  {
+    digitalWrite(STATUS_LED, HIGH);
+  }
+  else
+  {
+    digitalWrite(STATUS_LED, LOW);
+  }
+  // Warning/Fault LED
+  if (lowBattery)
+  {
+    digitalWrite(FAULT_LED, millis() % 400 < 200);
+  }
+  else
+  {
+    digitalWrite(FAULT_LED, LOW);
+  }
+  // Buzzer Alerts
+  if (criticalBattery)
+  {
+    tone(BUZZER_PIN, 1000);
+  }
+  else if (lowBattery)
+  {
+    if (millis() % 2000 < 300)
+    {
+      tone(BUZZER_PIN, 800);
+    }
+    else
+    {
+      noTone(BUZZER_PIN);
+    }
+  }
+  else
+  {
+    noTone(BUZZER_PIN);
+  }
+}
+
+// ===============================
+// Lighting Load Control
+// ===============================
+void controlLighting(bool state)
+{
+  lightState = state;
+  digitalWrite(LIGHT_LED, state);
+}
 float currentTemp = 0.0;
 float currentHum = 0.0;
 bool isSunny = false;
@@ -182,18 +294,16 @@ void publishPv() {
 }
 
 void publishBattery() {
-  StaticJsonDocument<256> doc;
-  doc["timestamp"] = getIsoTimestamp();
-  doc["soc_percent"] = batterySOC;
-  doc["voltage"] = batteryVoltage;
-  doc["current_a"] = batteryCurrent;
-  
+  StaticJsonDocument<256> batteryDoc;
+  batteryDoc["voltage"] = batteryVoltage;
+  batteryDoc["soc_percent"] = batteryPercentage;
+  batteryDoc["charging"] = chargingState;
+  batteryDoc["low_battery"] = lowBattery;
   String topic = String(MQTT_PREFIX) + "/sensors/battery";
   String json;
-  serializeJson(doc, json);
-  
+  serializeJson(batteryDoc, json);
   if (mqttClient.publish(topic.c_str(), json.c_str())) {
-    logf("BATT", "Published: %.1f%%", batterySOC);
+    logf("BATT", "Published: %.1f%%", batteryPercentage);
   } else {
     log("BATT", "Publish failed");
   }
@@ -285,10 +395,7 @@ void readSensors() {
   // Battery current (simplified)
   batteryCurrent = (pvPower - loadPower) / batteryVoltage;
   
-  // Update LED indicators
-  digitalWrite(LED_BAT_HIGH, batterySOC > 70 ? HIGH : LOW);
-  digitalWrite(LED_BAT_MED, (batterySOC > 40 && batterySOC <= 70) ? HIGH : LOW);
-  digitalWrite(LED_BAT_LOW, batterySOC < 40 ? HIGH : LOW);
+  // Battery status LEDs are now handled in handleSystemStatus()
   
   // Critical alert
   if (batterySOC < 20) {
@@ -355,85 +462,170 @@ String getIsoTimestamp() {
 String getHtmlDashboard() {
   String html = R"rawliteral(
 <!DOCTYPE html>
-<html>
+<html lang='en'>
 <head>
   <meta name='viewport' content='width=device-width, initial-scale=1'>
   <title>Microgrid Gateway</title>
   <style>
-    body { font-family: Arial, sans-serif; background: #f0f0f0; margin: 0; padding: 20px; }
-    .container { max-width: 900px; margin: auto; }
-    h1 { color: #333; text-align: center; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-    .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .label { color: #666; font-size: 0.9em; }
-    .value { font-size: 2em; font-weight: bold; color: #27ae60; margin: 10px 0; }
-    .status { padding: 5px 10px; border-radius: 5px; display: inline-block; font-size: 0.9em; }
-    .status.ok { background: #27ae60; color: white; }
-    .status.warn { background: #f39c12; color: white; }
-    .status.error { background: #e74c3c; color: white; }
-    button { padding: 10px 20px; margin: 5px; font-size: 1em; border: none; border-radius: 5px; cursor: pointer; }
-    .btn-on { background: #27ae60; color: white; }
-    .btn-off { background: #e74c3c; color: white; }
+    body {
+      font-family: 'Inter', Arial, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      margin: 0;
+      padding: 0;
+    }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 24px 12px;
+    }
+    h1 {
+      color: #38bdf8;
+      text-align: center;
+      font-size: 2.2rem;
+      margin-bottom: 1.5rem;
+      letter-spacing: -1px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 18px;
+      margin-bottom: 2rem;
+    }
+    .card {
+      background: #1e293b;
+      padding: 1.2rem 1.1rem 1.1rem 1.1rem;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      min-height: 120px;
+    }
+    .label {
+      color: #94a3b8;
+      font-size: 0.98em;
+      margin-bottom: 0.2em;
+    }
+    .value {
+      font-size: 2.1em;
+      font-weight: 700;
+      color: #0ea5e9;
+      margin: 0.2em 0 0.1em 0;
+    }
+    .status {
+      padding: 5px 12px;
+      border-radius: 999px;
+      display: inline-block;
+      font-size: 0.98em;
+      margin-top: 0.5em;
+      font-weight: 500;
+      border: 1px solid #334155;
+    }
+    .status.ok { background: #22c55e; color: #fff; border-color: #22c55e; }
+    .status.warn { background: #f59e0b; color: #fff; border-color: #f59e0b; }
+    .status.error { background: #ef4444; color: #fff; border-color: #ef4444; }
+    .donut {
+      width: 80px; height: 80px; display: block; margin: 0.5em auto 0.2em auto;
+    }
+    .pvbar {
+      width: 100%; height: 16px; background: #334155; border-radius: 8px; margin: 0.5em 0 0.2em 0; overflow: hidden;
+    }
+    .pvbar-inner {
+      height: 100%; background: #22c55e; transition: width 0.5s; }
+    .pvbar-label { font-size: 0.9em; color: #38bdf8; margin-top: 0.2em; }
+    .relay-btn {
+      padding: 10px 20px;
+      margin: 5px 0 0 0;
+      font-size: 1em;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      background: #0ea5e9;
+      color: #fff;
+      font-weight: 600;
+      transition: background 0.2s;
+    }
+    .relay-btn:hover { background: #38bdf8; }
+    @media (max-width: 600px) {
+      .container { padding: 8px 2px; }
+      .grid { grid-template-columns: 1fr; }
+    }
   </style>
   <script>
+    function setDonut(val) {
+      var c = document.getElementById('donut');
+      if (!c) return;
+      var pct = Math.max(0, Math.min(100, val));
+      var r = 36, cLen = 2 * Math.PI * r;
+      var offset = cLen * (1 - pct / 100);
+      c.querySelector('.donut-ring').setAttribute('stroke-dasharray', cLen);
+      c.querySelector('.donut-segment').setAttribute('stroke-dasharray', cLen);
+      c.querySelector('.donut-segment').setAttribute('stroke-dashoffset', offset);
+      document.getElementById('batt').textContent = pct.toFixed(1) + '%';
+    }
+    function updateUI(d) {
+      setDonut(d.batt);
+      document.getElementById('temp').textContent = d.temp.toFixed(1) + '°C';
+      document.getElementById('pv').textContent = d.pv.toFixed(0) + 'W';
+      document.getElementById('pvbar-inner').style.width = Math.min(100, d.pv / 200 * 100) + '%';
+      document.getElementById('load').textContent = d.load.toFixed(0) + 'W';
+      document.getElementById('sun').textContent = d.sun ? 'YES' : 'NO';
+      document.getElementById('mqtt').textContent = d.mqtt ? 'Connected' : 'Disconnected';
+      document.getElementById('mqtt').className = 'status ' + (d.mqtt ? 'ok' : 'error');
+      document.getElementById('wifi').textContent = d.wifi ? 'Connected' : 'Disconnected';
+      document.getElementById('wifi').className = 'status ' + (d.wifi ? 'ok' : 'error');
+    }
     setInterval(function() {
-      fetch('/api/status').then(r => r.json()).then(d => {
-        document.getElementById('batt').textContent = d.batt.toFixed(1) + '%';
-        document.getElementById('temp').textContent = d.temp.toFixed(1) + '°C';
-        document.getElementById('pv').textContent = d.pv.toFixed(0) + 'W';
-        document.getElementById('load').textContent = d.load.toFixed(0) + 'W';
-        document.getElementById('sun').textContent = d.sun ? 'YES' : 'NO';
-        document.getElementById('mqtt').textContent = d.mqtt ? 'Connected' : 'Disconnected';
-        document.getElementById('mqtt').className = 'status ' + (d.mqtt ? 'ok' : 'error');
-        document.getElementById('wifi').textContent = d.wifi ? 'Connected' : 'Disconnected';
-        document.getElementById('wifi').className = 'status ' + (d.wifi ? 'ok' : 'error');
-      });
+      fetch('/api/status').then(r => r.json()).then(updateUI);
     }, 2000);
-    
     function toggleRelay(relay) {
       fetch('/api/relay/' + relay, {method: 'POST'}).then(r => r.json()).then(d => {
-        console.log(d.message);
+        // Optionally show feedback
       });
+    }
+    window.onload = function() {
+      fetch('/api/status').then(r => r.json()).then(updateUI);
     }
   </script>
 </head>
 <body>
   <div class='container'>
-    <h1>🔋 Microgrid Gateway Monitor</h1>
-    
+    <h1> Microgrid Gateway</h1>
     <div class='grid'>
-      <div class='card'>
+      <div class='card' style='align-items:center;'>
         <div class='label'>Battery SOC</div>
-        <div class='value' id='batt'>--</div>
+        <svg id='donut' class='donut' viewBox='0 0 80 80'>
+          <circle class='donut-ring' cx='40' cy='40' r='36' fill='transparent' stroke='#334155' stroke-width='8'/>
+          <circle class='donut-segment' cx='40' cy='40' r='36' fill='transparent' stroke='#0ea5e9' stroke-width='8' stroke-linecap='round' stroke-dasharray='226' stroke-dashoffset='0'/>
+          <text x='40' y='46' text-anchor='middle' font-size='1.2em' fill='#e2e8f0' font-family='Inter,Arial,sans-serif'>
+            <tspan id='batt'>--</tspan>
+          </text>
+        </svg>
         <div id='mqtt' class='status error'>Disconnected</div>
         <div id='wifi' class='status error'>Disconnected</div>
       </div>
-      
       <div class='card'>
         <div class='label'>Temperature</div>
         <div class='value' id='temp'>--</div>
       </div>
-      
       <div class='card'>
         <div class='label'>PV Generation</div>
         <div class='value' id='pv'>--</div>
-        <div class='label'>Solar Status</div>
-        <div id='sun'>--</div>
+        <div class='pvbar'><div id='pvbar-inner' class='pvbar-inner' style='width:0%'></div></div>
+        <div class='pvbar-label'>Solar Status: <span id='sun'>--</span></div>
       </div>
-      
       <div class='card'>
         <div class='label'>Load Power</div>
         <div class='value' id='load'>--</div>
       </div>
-      
       <div class='card'>
         <div class='label'>Relay 1 (proto_led_a)</div>
-        <button class='btn-on' onclick='toggleRelay("1")'>Toggle</button>
+        <button class='relay-btn' onclick='toggleRelay("1")'>Toggle</button>
       </div>
-      
       <div class='card'>
         <div class='label'>Relay 2 (proto_led_b)</div>
-        <button class='btn-on' onclick='toggleRelay("2")'>Toggle</button>
+        <button class='relay-btn' onclick='toggleRelay("2")'>Toggle</button>
       </div>
     </div>
   </div>
@@ -450,14 +642,17 @@ void handleRoot() {
 
 void handleStatus() {
   StaticJsonDocument<256> doc;
-  doc["batt"] = batterySOC;
+  doc["battery_voltage"] = batteryVoltage;
+  doc["battery_percent"] = batteryPercentage;
+  doc["charging"] = chargingState;
+  doc["low_battery"] = lowBattery;
+  doc["batt"] = batteryPercentage;
   doc["temp"] = currentTemp;
   doc["pv"] = pvPower;
   doc["load"] = loadPower;
   doc["sun"] = isSunny;
   doc["mqtt"] = mqttClient.connected();
   doc["wifi"] = WiFi.status() == WL_CONNECTED;
-  
   String json;
   serializeJson(doc, json);
   webServer.send(200, "application/json", json.c_str());
@@ -493,16 +688,23 @@ void setup() {
   
   // Pin setup
   pinMode(LIGHT_SENSOR, INPUT);
+  pinMode(WIFI_LED, OUTPUT);
+  pinMode(LIGHT_LED, OUTPUT);
+  pinMode(STATUS_LED, OUTPUT);
+  pinMode(CHARGING_LED, OUTPUT);
+  pinMode(FAULT_LED, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
-  pinMode(LED_BAT_HIGH, OUTPUT);
-  pinMode(LED_BAT_MED, OUTPUT);
-  pinMode(LED_BAT_LOW, OUTPUT);
-  pinMode(LED_LOAD_1, OUTPUT);
-  pinMode(LED_LOAD_2, OUTPUT);
+  pinMode(BATTERY_PIN, INPUT);
   pinMode(RELAY_LOAD_1, OUTPUT);
   pinMode(RELAY_LOAD_2, OUTPUT);
-  
-  // Initialize relays to ON
+
+  // Initial states
+  digitalWrite(WIFI_LED, LOW);
+  digitalWrite(LIGHT_LED, LOW);
+  digitalWrite(STATUS_LED, LOW);
+  digitalWrite(CHARGING_LED, LOW);
+  digitalWrite(FAULT_LED, LOW);
+  digitalWrite(BUZZER_PIN, LOW);
   digitalWrite(RELAY_LOAD_1, HIGH);
   digitalWrite(RELAY_LOAD_2, HIGH);
   
@@ -543,23 +745,25 @@ void setup() {
 void loop() {
   // Handle web requests
   webServer.handleClient();
-  
+
   // WiFi reconnection
   if (WiFi.status() != WL_CONNECTED) {
     connectWiFi();
   }
-  
+
   // MQTT connection & loop
   if (!mqttClient.connected()) {
     connectMqtt();
   }
   mqttClient.loop();
-  
+
   // Read sensors
   readSensors();
-  
+  readBattery();
+  handleSystemStatus();
+
   // Publish data
   publishSensorData();
-  
-  delay(50);  // Small delay to prevent watchdog reset
+
+  delay(100);  // Small delay to prevent watchdog reset
 }
