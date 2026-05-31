@@ -86,7 +86,7 @@ export default function Sensors({ api }) {
       }
     }
     load()
-    const id = setInterval(load, 10000)
+    const id = setInterval(load, 1000)
     return () => {
       cancelled = true
       clearInterval(id)

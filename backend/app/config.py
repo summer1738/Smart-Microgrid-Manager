@@ -5,9 +5,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Backend settings."""
 
-    use_hardware_simulation: bool = True
+    use_hardware_simulation: bool = False
     database_url: str = "mysql+aiomysql://root:Virus1738%25@localhost:3306/smart_microgrid"
-    simulator_interval_seconds: int = 5
+    simulator_interval_seconds: int = 1
     controller_loop_enabled: bool = True
     controller_tick_on_status_request: bool = False
     # Optional: automatic LSTM retraining loop (runs inside backend process).

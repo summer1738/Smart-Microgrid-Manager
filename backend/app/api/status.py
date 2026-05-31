@@ -9,10 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_min_role
 from app.config import settings
 from app.database import get_db
-from app.models import Appliance, BatteryReading, LoadReading, PvReading
+from app.models import Appliance, BatteryReading, LoadReading, PvReading, TempHumidityReading, LightReading
 from app.schemas import (
     BatterySnapshot,
     HistoryPoint,
+    LightSnapshot,
     LoadSensorSnapshotOut,
     LoadSnapshot,
     PvSnapshot,
@@ -20,6 +21,7 @@ from app.schemas import (
     SensorSnapshotOut,
     StatusHistoryOut,
     StatusOut,
+    TempHumiditySnapshot,
 )
 from app.services.mqtt_ingest_service import get_mqtt_health
 from app.services.schedule_executor_service import apply_schedule
@@ -129,6 +131,49 @@ def _battery_snapshot(row: Optional[BatteryReading], now: datetime) -> SensorSna
     )
 
 
+def _temp_humidity_snapshot(row: Optional[TempHumidityReading], now: datetime) -> TempHumiditySnapshot:
+    freshness, age_seconds = _sensor_freshness(row.timestamp if row else None, LOAD_READING_FRESHNESS_SECONDS, now=now)
+    return TempHumiditySnapshot(
+        present=row is not None,
+        freshness=freshness if row is not None else "missing",
+        age_seconds=age_seconds,
+        timestamp=row.timestamp if row else None,
+        temp_c=float(row.temp_c) if row else None,
+        humidity_percent=float(row.humidity_percent) if row else None,
+    )
+
+
+def _light_snapshot(row: Optional[LightReading], now: datetime) -> LightSnapshot:
+    freshness, age_seconds = _sensor_freshness(row.timestamp if row else None, LOAD_READING_FRESHNESS_SECONDS, now=now)
+    return LightSnapshot(
+        present=row is not None,
+        freshness=freshness if row is not None else "missing",
+        age_seconds=age_seconds,
+        timestamp=row.timestamp if row else None,
+        is_sunny=bool(row.is_sunny) if row else None,
+    )
+
+
+def _latest_load_rows(db: AsyncSession):
+    latest_loads = (
+        select(
+            LoadReading.appliance_id.label("appliance_id"),
+            func.max(LoadReading.timestamp).label("latest_timestamp"),
+        )
+        .group_by(LoadReading.appliance_id)
+        .subquery()
+    )
+    return db.execute(
+        select(LoadReading, Appliance)
+        .join(Appliance, LoadReading.appliance_id == Appliance.id)
+        .join(
+            latest_loads,
+            (LoadReading.appliance_id == latest_loads.c.appliance_id)
+            & (LoadReading.timestamp == latest_loads.c.latest_timestamp),
+        )
+    )
+
+
 @router.get("", response_model=StatusOut)
 async def get_status(db: AsyncSession = Depends(get_db)) -> StatusOut:
     """
@@ -206,11 +251,7 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> StatusOut:
             [ts for ts in [_to_utc(pv_row.timestamp) if pv_row else None, _to_utc(bat_row.timestamp) if bat_row else None] if ts],
             default=None,
         )
-        load_rows = await db.execute(
-            select(LoadReading, Appliance)
-            .join(Appliance, LoadReading.appliance_id == Appliance.id)
-            .order_by(desc(LoadReading.timestamp))
-        )
+        load_rows = await _latest_load_rows(db)
         seen = set()
         loads_out = []
         total = 0.0
@@ -278,11 +319,7 @@ async def get_status(db: AsyncSession = Depends(get_db)) -> StatusOut:
         [ts for ts in [_to_utc(pv_row.timestamp) if pv_row else None, _to_utc(bat_row.timestamp) if bat_row else None] if ts],
         default=None,
     )
-    load_rows = await db.execute(
-        select(LoadReading, Appliance)
-        .join(Appliance, LoadReading.appliance_id == Appliance.id)
-        .order_by(desc(LoadReading.timestamp))
-    )
+    load_rows = await _latest_load_rows(db)
     # Deduplicate by appliance (latest per appliance)
     seen = set()
     loads_out = []
@@ -352,11 +389,9 @@ async def get_sensor_monitor(db: AsyncSession = Depends(get_db)) -> SensorMonito
     now = datetime.now(timezone.utc)
     pv_row = (await db.execute(select(PvReading).order_by(desc(PvReading.timestamp)).limit(1))).scalar_one_or_none()
     bat_row = (await db.execute(select(BatteryReading).order_by(desc(BatteryReading.timestamp)).limit(1))).scalar_one_or_none()
-    load_rows = await db.execute(
-        select(LoadReading, Appliance)
-        .join(Appliance, LoadReading.appliance_id == Appliance.id)
-        .order_by(desc(LoadReading.timestamp))
-    )
+    temp_row = (await db.execute(select(TempHumidityReading).order_by(desc(TempHumidityReading.timestamp)).limit(1))).scalar_one_or_none()
+    light_row = (await db.execute(select(LightReading).order_by(desc(LightReading.timestamp)).limit(1))).scalar_one_or_none()
+    load_rows = await _latest_load_rows(db)
 
     loads: list[LoadSensorSnapshotOut] = []
     seen: set[int] = set()
@@ -408,6 +443,8 @@ async def get_sensor_monitor(db: AsyncSession = Depends(get_db)) -> SensorMonito
         freshness_threshold_seconds=LOAD_READING_FRESHNESS_SECONDS,
         pv=_pv_snapshot(pv_row, now),
         battery=_battery_snapshot(bat_row, now),
+        temp_humidity=_temp_humidity_snapshot(temp_row, now),
+        light=_light_snapshot(light_row, now),
         loads=loads,
         mqtt=get_mqtt_health(),
     )

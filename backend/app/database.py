@@ -10,6 +10,10 @@ from app.models import Base
 engine = create_async_engine(
     settings.database_url,
     echo=False,
+    pool_size=20,
+    max_overflow=20,
+    pool_timeout=30,
+    pool_pre_ping=True,
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -57,6 +61,27 @@ def _run_lightweight_migrations(sync_conn) -> None:
         sync_conn.exec_driver_sql(
             "ALTER TABLE appliances ADD COLUMN manual_override_active BOOLEAN NOT NULL DEFAULT FALSE"
         )
+
+    if "load_readings" in tables:
+        load_indexes = {idx["name"] for idx in insp.get_indexes("load_readings")}
+        if "ix_load_readings_appliance_id" not in load_indexes:
+            sync_conn.exec_driver_sql(
+                "CREATE INDEX ix_load_readings_appliance_id ON load_readings (appliance_id)"
+            )
+
+    if "schedule_slots" in tables:
+        schedule_indexes = {idx["name"] for idx in insp.get_indexes("schedule_slots")}
+        if "ix_schedule_slots_appliance_id" not in schedule_indexes:
+            sync_conn.exec_driver_sql(
+                "CREATE INDEX ix_schedule_slots_appliance_id ON schedule_slots (appliance_id)"
+            )
+
+    if "session_tokens" in tables:
+        session_indexes = {idx["name"] for idx in insp.get_indexes("session_tokens")}
+        if "ix_session_tokens_revoked_at" not in session_indexes:
+            sync_conn.exec_driver_sql(
+                "CREATE INDEX ix_session_tokens_revoked_at ON session_tokens (revoked_at)"
+            )
 
     if "system_settings" in tables:
         sys_cols = {c["name"] for c in insp.get_columns("system_settings")}

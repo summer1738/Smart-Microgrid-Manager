@@ -32,7 +32,7 @@ class SessionToken(Base):
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
-    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
 
     user: Mapped["User"] = relationship("User", back_populates="sessions")
 
@@ -81,7 +81,7 @@ class LoadReading(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
-    appliance_id: Mapped[int] = mapped_column(ForeignKey("appliances.id"), nullable=False)
+    appliance_id: Mapped[int] = mapped_column(ForeignKey("appliances.id"), nullable=False, index=True)
     power_kw: Mapped[float] = mapped_column(Float, nullable=False)
     state: Mapped[str] = mapped_column(String(20), default="on")  # on / off / shedded
 
@@ -90,7 +90,7 @@ class ScheduleSlot(Base):
     __tablename__ = "schedule_slots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    appliance_id: Mapped[int] = mapped_column(ForeignKey("appliances.id"), nullable=False)
+    appliance_id: Mapped[int] = mapped_column(ForeignKey("appliances.id"), nullable=False, index=True)
     start_ts: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     end_ts: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     planned_state: Mapped[str] = mapped_column(String(20), nullable=False)  # on / off
